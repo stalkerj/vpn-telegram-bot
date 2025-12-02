@@ -24,7 +24,7 @@ VPN Telegram Bot - это полнофункциональный бот для �
 Установка бота на VPS одной командой:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/vpn-telegram-bot/main/install-vpn-bot.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh | sudo bash
 ```
 
 ## 🎯 Возможности

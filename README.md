@@ -351,6 +351,9 @@ MIT License - см. файл [LICENSE](LICENSE)
 
 Спасибо всем, кто использует и улучшает этот проект!
 
+ТАК ЖЕ ВЫ МОЖЕТЕ ОТБЛАГОДАРИТЬ АВТОРА ЛЮБЫМ ДОНАТОМ:
+https://www.tbank.ru/cf/A1Cj74Nvan6
+
 ---
 
 <div align="center">

@@ -2,7 +2,7 @@
 
 # ============================================
 # VPN Telegram Bot - Auto Installer
-# Версия: 2.0
+# Версия: 2.1
 # Автоматическая установка на чистый VPS
 # ============================================
 
@@ -25,7 +25,7 @@ print_banner() {
     echo "║                                                       ║"
     echo "║        🤖  VPN TELEGRAM BOT INSTALLER  🤖           ║"
     echo "║                                                       ║"
-    echo "║         Автоматическая установка v2.0                ║"
+    echo "║         Автоматическая установка v2.1                ║"
     echo "║                                                       ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -53,6 +53,50 @@ print_header() {
     echo -e "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${PURPLE}  $1${NC}"
     echo -e "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+}
+
+# Спиннер для длительных операций
+show_spinner() {
+    local pid=$1
+    local message=$2
+    local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+
+    echo -n "   "
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) %10 ))
+        printf "\r   ${CYAN}${spin:$i:1}${NC} $message"
+        sleep 0.1
+    done
+    printf "\r   ${GREEN}✓${NC} $message\n"
+}
+
+# Прогресс бар для установки пакетов
+show_progress() {
+    local duration=$1
+    local message=$2
+    local progress=0
+    local bar_length=40
+
+    echo -ne "   $message\n   ["
+
+    while [ $progress -le $duration ]; do
+        local filled=$(( progress * bar_length / duration ))
+        local empty=$(( bar_length - filled ))
+
+        printf "\r   ["
+        printf "%${filled}s" '' | tr ' ' '█'
+        printf "%${empty}s" '' | tr ' ' '░'
+        printf "] %3d%%" $(( progress * 100 / duration ))
+
+        sleep 0.5
+        progress=$(( progress + 1 ))
+    done
+
+    printf "\r   ["
+    printf "%${bar_length}s" '' | tr ' ' '█'
+    printf "] 100%%\n"
     echo ""
 }
 
@@ -100,39 +144,92 @@ check_requirements() {
     fi
 }
 
-# Обновление системы
+# Обновление системы с прогрессом
 update_system() {
     print_header "📦 Обновление системы"
-    print_info "Обновляем списки пакетов..."
 
     if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
-        apt update -y > /dev/null 2>&1
+        # Обновление списков пакетов
+        print_info "Обновляем списки пакетов..."
+        {
+            apt update -y > /tmp/apt_update.log 2>&1
+        } &
+        show_spinner $! "Загрузка информации о пакетах"
         print_success "Списки пакетов обновлены"
 
-        print_info "Обновляем установленные пакеты..."
-        apt upgrade -y > /dev/null 2>&1
-        print_success "Система обновлена"
+        # Подсчет пакетов для обновления
+        upgradable_count=$(apt list --upgradable 2>/dev/null | grep -c "upgradable" || echo "0")
+
+        if [ "$upgradable_count" -gt 0 ]; then
+            print_info "Найдено пакетов для обновления: $upgradable_count"
+            print_info "Обновляем установленные пакеты (это может занять 5-10 минут)..."
+            echo ""
+
+            # Показываем прогресс обновления в реальном времени
+            {
+                DEBIAN_FRONTEND=noninteractive apt upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" 2>&1 | while IFS= read -r line; do
+                    # Показываем только важные строки
+                    if [[ "$line" =~ "Setting up" ]] || [[ "$line" =~ "Unpacking" ]] || [[ "$line" =~ "Processing" ]]; then
+                        echo "   ${CYAN}→${NC} ${line:0:70}"
+                    fi
+                done
+            }
+
+            echo ""
+            print_success "Система обновлена"
+        else
+            print_success "Все пакеты уже актуальны"
+        fi
     else
         print_warning "Автоматическое обновление не поддерживается для $OS"
     fi
 }
 
-# Установка зависимостей
+# Установка зависимостей с прогрессом
 install_dependencies() {
     print_header "📦 Установка зависимостей"
 
     local packages="python3 python3-pip python3-venv git curl wget nano ufw"
 
-    print_info "Устанавливаем: $packages"
+    print_info "Проверяем необходимые пакеты..."
 
     if [[ "$OS" == "ubuntu" ]] || [[ "$OS" == "debian" ]]; then
-        DEBIAN_FRONTEND=noninteractive apt install -y $packages > /dev/null 2>&1
+        # Проверяем, какие пакеты уже установлены
+        local to_install=""
+        local already_installed=""
+
+        for pkg in $packages; do
+            if dpkg -l | grep -q "^ii  $pkg "; then
+                already_installed="$already_installed $pkg"
+            else
+                to_install="$to_install $pkg"
+            fi
+        done
+
+        if [ -n "$already_installed" ]; then
+            print_success "Уже установлены:${already_installed}"
+        fi
+
+        if [ -n "$to_install" ]; then
+            print_info "Устанавливаем:${to_install}"
+            echo ""
+
+            {
+                DEBIAN_FRONTEND=noninteractive apt install -y $to_install 2>&1 | while IFS= read -r line; do
+                    if [[ "$line" =~ "Setting up" ]] || [[ "$line" =~ "Unpacking" ]]; then
+                        echo "   ${CYAN}→${NC} ${line:0:70}"
+                    fi
+                done
+            }
+
+            echo ""
+        fi
+
+        print_success "Все пакеты установлены"
     else
         print_error "Неподдерживаемая ОС: $OS"
         exit 1
     fi
-
-    print_success "Все пакеты установлены"
 
     # Проверка Python версии
     python_version=$(python3 --version | awk '{print $2}')
@@ -266,15 +363,33 @@ install_bot() {
 
     # Создаем виртуальное окружение
     print_info "Создаем Python виртуальное окружение..."
-    python3 -m venv vpn-bot-env
+    {
+        python3 -m venv vpn-bot-env > /tmp/venv_create.log 2>&1
+    } &
+    show_spinner $! "Настройка изолированного Python окружения"
     print_success "Виртуальное окружение создано"
 
     # Активируем и устанавливаем зависимости
     print_info "Устанавливаем Python библиотеки..."
     source vpn-bot-env/bin/activate
 
-    pip install --upgrade pip > /dev/null 2>&1
-    pip install pyTelegramBotAPI requests qrcode python-dotenv APScheduler urllib3 > /dev/null 2>&1
+    echo ""
+    print_info "→ Обновляем pip..."
+    pip install --upgrade pip > /tmp/pip_upgrade.log 2>&1
+
+    print_info "→ Устанавливаем библиотеки:"
+    echo "   • pyTelegramBotAPI (Telegram Bot API)"
+    echo "   • requests (HTTP клиент)"
+    echo "   • qrcode (генерация QR-кодов)"
+    echo "   • python-dotenv (переменные окружения)"
+    echo "   • APScheduler (планировщик задач)"
+    echo "   • urllib3 (HTTP библиотека)"
+    echo ""
+
+    {
+        pip install pyTelegramBotAPI requests qrcode python-dotenv APScheduler urllib3 > /tmp/pip_install.log 2>&1
+    } &
+    show_spinner $! "Загрузка и установка Python пакетов"
 
     print_success "Python библиотеки установлены"
 
@@ -323,7 +438,8 @@ EOF
     tail -n +$((MARKER_LINE + 1)) "$SCRIPT_PATH" > "$BOT_DIR/vpn_bot.py"
 
     chmod +x "$BOT_DIR/vpn_bot.py"
-    print_success "Файл бота создан"
+    bot_size=$(du -h "$BOT_DIR/vpn_bot.py" | cut -f1)
+    print_success "Файл бота создан (размер: $bot_size)"
 }
 
 # Настройка systemd службы
@@ -374,14 +490,21 @@ start_bot() {
     systemctl start vpn-bot.service
 
     # Даем время на запуск
-    sleep 3
+    echo ""
+    for i in {3..1}; do
+        echo -ne "   ${CYAN}⏳${NC} Ожидание запуска: $i сек...\r"
+        sleep 1
+    done
+    echo -ne "   ${GREEN}✓${NC} Бот запущен                 \n"
+    echo ""
 
     # Проверяем статус
     if systemctl is-active --quiet vpn-bot.service; then
-        print_success "Бот успешно запущен!"
+        print_success "Бот успешно запущен и работает!"
     else
         print_error "Ошибка запуска бота!"
         print_info "Показываем последние логи:"
+        echo ""
         journalctl -u vpn-bot.service -n 20 --no-pager
         exit 1
     fi

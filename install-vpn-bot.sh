@@ -589,9 +589,135 @@ main() {
     start_bot
 
     show_completion
+
+    # После установки запускаем меню (опционально)
+    
+    post_install_menu
+}
+
+# ============================================
+# ТЕРМИНАЛЬНОЕ МЕНЮ УПРАВЛЕНИЯ (BASH)
+# Размещаем ПОСЛЕ функции main, но ДО запуска
+# ============================================
+
+menu_loop() {
+    while true; do
+        clear
+        echo -e "${CYAN}╔════ VPN TELEGRAM BOT: МЕНЮ ═══════════════╗${NC}"
+        echo "1) Добавить сервер 3x-ui"
+        echo "2) Редактировать сервер"
+        echo "3) Список серверов"
+        echo "4) Перезапустить бота"
+        echo "5) Показать логи"
+        echo "6) Полное удаление бота"
+        echo "0) Выход"
+        echo ""
+        read -p "➤ Выберите действие: " choice
+        
+        case $choice in
+            1) menu_add_server ;;
+            2) menu_edit_server ;;
+            3) menu_list_servers ;;
+            4) menu_restart_bot ;;
+            5) menu_show_logs ;;
+            6) menu_remove_bot ;;
+            0) break ;;
+            *) echo -e "${RED}Неверный выбор!${NC}"; sleep 1 ;;
+        esac
+    done
+}
+
+menu_add_server() {
+    echo ""
+    echo -e "${CYAN}--- Добавление нового сервера ---${NC}"
+    echo "Функция в разработке. Отредактируйте /root/vpn-bot/.env вручную:"
+    echo "nano /root/vpn-bot/.env"
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_edit_server() {
+    menu_list_servers
+    echo ""
+    echo "Для редактирования откройте файл конфигурации:"
+    echo "nano /root/vpn-bot/.env"
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_list_servers() {
+    local envfile="/root/vpn-bot/.env"
+    echo ""
+    echo -e "${CYAN}--- Список серверов ---${NC}"
+    if [ -f "$envfile" ]; then
+        grep "^# Server" "$envfile" || echo "Серверы не найдены"
+        echo ""
+        grep "^COUNTRY_NAME_" "$envfile" || echo ""
+        grep "^XUI_HOST_" "$envfile" || echo ""
+    else
+        echo "Файл конфигурации не найден"
+    fi
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_restart_bot() {
+    echo ""
+    echo -e "${YELLOW}Перезапуск службы vpn-bot...${NC}"
+    systemctl restart vpn-bot.service
+    sleep 2
+    systemctl status vpn-bot.service --no-pager -n 10
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_show_logs() {
+    echo ""
+    echo -e "${CYAN}--- Последние 50 строк логов ---${NC}"
+    journalctl -u vpn-bot -n 50 --no-pager
+    echo ""
+    echo "Для просмотра в реальном времени: journalctl -u vpn-bot -f"
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_remove_bot() {
+    echo ""
+    echo -e "${RED}!!! ВНИМАНИЕ !!!${NC}"
+    echo "Это действие полностью удалит VPN Telegram Bot:"
+    echo "- Службу systemd"
+    echo "- Виртуальное окружение"
+    echo "- Все файлы в /root/vpn-bot"
+    echo ""
+    read -p "Введите YES для подтверждения: " confirm1
+    [ "$confirm1" != "YES" ] && echo "Отменено" && sleep 1 && return
+    
+    read -p "Точно? Введите УДАЛИТЬ: " confirm2
+    [ "$confirm2" != "УДАЛИТЬ" ] && echo "Отменено" && sleep 1 && return
+    
+    systemctl stop vpn-bot.service 2>/dev/null || true
+    systemctl disable vpn-bot.service 2>/dev/null || true
+    rm -f /etc/systemd/system/vpn-bot.service
+    rm -rf /root/vpn-bot
+    systemctl daemon-reload
+    
+    echo -e "${GREEN}VPN Bot полностью удалён!${NC}"
+    sleep 2
+    exit 0
+}
+
+post_install_menu() {
+    print_header "Терминальное меню управления"
+    echo -e "${CYAN}Открыть меню управления ботом? (y/n)${NC}"
+    read -p "➤ " answer
+    if [[ "$answer" == "y" ]] || [[ "$answer" == "Y" ]]; then
+        menu_loop
+    fi
 }
 
 # Запуск установки
+
+
 main
 
 # Выход
@@ -602,122 +728,6 @@ exit 0
 # НЕ РЕДАКТИРУЙТЕ ВРУЧНУЮ!
 # ============================================
 __BOT_CODE_BELOW__
-__MENU_BELOW__
-# ============================================
-# ТЕРМИНАЛЬНОЕ МЕНЮ УПРАВЛЕНИЯ VPN BOT
-# ============================================
-menu_loop() {
-    while true; do
-        clear
-        echo -e "${CYAN}╔════  VPN TELEGRAM BOT: МЕНЮ  ═══════════════════════════════╗${NC}"
-        echo "1) Добавить сервер 3x-ui"
-        echo "2) Редактировать сервер"
-        echo "3) Список серверов"
-        echo "4) Перезапустить бота"
-        echo "5) Полное удаление бота"
-        echo "0) Выход"
-        echo ""
-        read -p "➤ Выберите действие: " choice
-        case $choice in
-            1) menu_add_server ;;
-            2) menu_edit_server ;;
-            3) menu_list_servers ;;
-            4) menu_restart_bot ;;
-            5) menu_remove_bot ;;
-            0) break ;;
-            *) echo -e "${RED}Неверный выбор!${NC}"; sleep 1 ;;
-        esac
-    done
-}
-
-menu_add_server() {
-    echo
-    echo -e "${CYAN}--- Добавление нового сервера ---${NC}"
-    collect_server_data
-}
-
-menu_edit_server() {
-    menu_list_servers
-    echo
-    read -p "Введите номер сервера для редактирования: " editnum
-    echo -e "${CYAN}--- Редактирование сервера №${editnum} ---${NC}"
-    # Реализация: изменить запись в /root/vpn-bot/.env вручную или доработать автозамену
-    echo -e "Пока только вручную: найдите и измените запись в /root/vpn-bot/.env"
-    sleep 3
-}
-
-menu_list_servers() {
-    local envfile="/root/vpn-bot/.env"
-    echo
-    echo -e "${CYAN}--- Список серверов ---${NC}"
-    if [ -f "$envfile" ]; then
-        grep "^# Server" "$envfile"
-    else
-        echo "Нет серверов"
-    fi
-    echo
-    read -p "Нажмите Enter для возврата в меню..." tmp
-}
-
-menu_restart_bot() {
-    echo
-    echo -e "${YELLOW}Перезапуск службы vpn-bot...${NC}"
-    systemctl restart vpn-bot.service
-    systemctl status vpn-bot.service --no-pager -n 5
-    echo
-    read -p "Нажмите Enter для возврата в меню..." tmp
-}
-
-menu_remove_bot() {
-    echo
-    echo -e "${RED}!!! ВНИМАНИЕ !!!${NC}"
-    echo "Это действие полностью удалит VPN Telegram Bot:"
-    echo "- Службу systemd"
-    echo "- Виртуальное окружение и все конфиги"
-    echo "- Файлы в /root/vpn-bot"
-    echo ""
-    read -p "Введите слово YES для подтверждения: " confirm1
-    [ "$confirm1" != "YES" ] && echo "Отменено" && sleep 1 && return
-    read -p "Точно? Введите слово УДАЛИТЬ: " confirm2
-    [ "$confirm2" != "УДАЛИТЬ" ] && echo "Отменено" && sleep 1 && return
-    systemctl stop vpn-bot.service || true
-    systemctl disable vpn-bot.service || true
-    rm -f /etc/systemd/system/vpn-bot.service
-    rm -rf /root/vpn-bot
-    systemctl daemon-reload
-    echo -e "${GREEN}VPN Bot полностью удалён!${NC}"
-    sleep 2
-    exit 0
-}
-
-# Функция для добавления сервера (или редактирования)
-collect_server_data() {
-    echo
-    read -p "Название страны/сервера: " country
-    read -p "URL панели (https://server.com:2053): " url
-    read -p "Путь к панели [/panel]: " path
-    path=${path:-/panel}
-    read -p "Username панели [admin]: " user
-    user=${user:-admin}
-    read -sp "Пароль панели: " passwd
-    echo
-    read -p "IP сервера: " ip
-    echo
-    echo -e "⚡ Добавьте эти данные вручную в .env или реализуйте автозапись."
-    echo
-    read -p "Нажмите Enter..." tmp
-}
-
-# Вызвать меню после полной установки:
-post_install_menu() {
-    print_header "Терминальное меню управления"
-    echo -e "${CYAN}Вы можете управлять ботом из этого меню!${NC}"
-    sleep 2
-    menu_loop
-}
-
-# Запускать post_install_menu в конце установки
-# (добавьте строку вызова: post_install_menu непосредственно перед exit 0)
 import os
 import io
 import uuid

@@ -2,7 +2,7 @@
 
 # ============================================
 # VPN Telegram Bot - Auto Installer
-# Версия: 3.6 (исправлен VLESS конфиг и автообновление)
+# Версия: 3.6 (исправлен VLESS и проверка обновлений)
 # ============================================
 
 set -e  # Остановить на ошибке
@@ -776,21 +776,13 @@ check_for_updates() {
     
     # Если скрипт запущен локально
     if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
-        # Ищем "v3.X" или "3.X" в первых 10 строках
+        # Ищем "v${SCRIPT_VERSION}" или "3.4" в первых 10 строках
         local_version=$(head -10 "${BASH_SOURCE[0]}" | grep -oP '(?:v|Версия: )\K[0-9.]+' | head -1)
     fi
     
-    # Если версию не удалось определить - пробуем fallback
+    # Если версию не удалось определить, используем значение по умолчанию
     if [ -z "$local_version" ]; then
-        if [ -f "/tmp/install-vpn-bot-latest.sh" ]; then
-            local_version=$(head -20 /tmp/install-vpn-bot-latest.sh 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
-        fi
-    fi
-
-    # Если все еще пусто - пропускаем проверку
-    if [ -z "$local_version" ]; then
-        print_warning "Не удалось определить текущую версию"
-        return 1
+        local_version=""  # Автоопределение: Синхронизируйте с версией в заголовке!
     fi
     
     local github_url="https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh"
@@ -805,7 +797,7 @@ check_for_updates() {
         return 1
     fi
     
-    # Функция сравнения версий (3.6 > 3.4)
+    # Функция сравнения версий (3.4 > 3.2)
     version_greater() {
         test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"
     }
@@ -852,11 +844,9 @@ check_for_updates() {
 # ГЛАВНАЯ ФУНКЦИЯ
 # ============================================
 main() {
-    # Извлекаем версию из заголовка скрипта для использования в баннере
+    # Извлекаем версию для баннера
     SCRIPT_VERSION=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
-    if [ -z "$SCRIPT_VERSION" ]; then
-        SCRIPT_VERSION="3.6"  # Fallback на случай если не удалось извлечь
-    fi
+    [ -z "$SCRIPT_VERSION" ] && SCRIPT_VERSION="3.6"
 
     print_banner
     check_root
@@ -887,7 +877,12 @@ main() {
         
         # Проверяем обновления скрипта
         echo ""
+    # Проверяем обновления только если скрипт доступен как файл
+    if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
         check_for_updates
+    else
+        print_info "Проверка обновлений пропущена (скрипт запущен через pipe)"
+    fi
         
         echo ""
         echo -e "${CYAN}Что вы хотите сделать?${NC}"

@@ -655,6 +655,7 @@ start_bot() {
 }
 
 # Финальный экран
+# Финальный экран
 show_completion() {
     clear
     echo -e "${GREEN}"
@@ -703,21 +704,35 @@ show_completion() {
     print_header "📋 Последние логи бота"
     journalctl -u vpn-bot.service -n 15 --no-pager
     echo ""
-
+    
     print_success "Установка завершена! Спасибо за использование! 🚀"
     echo ""
 
-    # НОВОЕ: Создаем глобальную команду vpn-bot
-    print_info "Создаем команду vpn-bot..."
-    cat > /usr/local/bin/vpn-bot << 'EOF'
+    # Создаем глобальную команду vpn-bot
+    create_vpn_bot_command
+}
+
+# Функция создания команды vpn-bot (отдельная для переиспользования)
+create_vpn_bot_command() {
+    if [ ! -f "/usr/local/bin/vpn-bot" ]; then
+        print_info "Создаем команду vpn-bot..."
+        cat > /usr/local/bin/vpn-bot << 'EOF'
 #!/bin/bash
 # VPN Bot Menu Launcher
-source /root/vpn-bot/menu.sh
-menu_loop
+if [ -f "/root/vpn-bot/menu.sh" ]; then
+    source /root/vpn-bot/menu.sh
+    menu_loop
+else
+    echo "❌ Ошибка: Файл /root/vpn-bot/menu.sh не найден"
+    echo "Переустановите бота: curl -sSL https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh | sudo bash"
+    exit 1
+fi
 EOF
-    chmod +x /usr/local/bin/vpn-bot
-    print_success "Команда vpn-bot создана! Теперь вы можете запустить меню из любого места: vpn-bot"
-    echo ""
+        chmod +x /usr/local/bin/vpn-bot
+        print_success "Команда vpn-bot создана!"
+    else
+        print_info "Команда vpn-bot уже существует"
+    fi
 }
 
 check_if_installed() {
@@ -796,6 +811,9 @@ main() {
         else
             print_warning "Статус: 🔴 Остановлен"
         fi
+        
+        # Проверяем и создаём команду vpn-bot если её нет
+        create_vpn_bot_command
         
         # Проверяем обновления скрипта
         echo ""
@@ -927,7 +945,6 @@ main() {
         menu_loop
     fi
 }
-
 
 # ============================================
 # ТЕРМИНАЛЬНОЕ МЕНЮ УПРАВЛЕНИЯ (BASH)

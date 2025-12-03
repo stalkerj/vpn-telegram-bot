@@ -728,6 +728,47 @@ check_if_installed() {
     fi
 }
 
+# Функция проверки обновлений скрипта
+check_for_updates() {
+    local local_version="3.0"
+    local github_url="https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh"
+    
+    print_info "Проверяю наличие обновлений..."
+    
+    # Скачиваем первые 50 строк для проверки версии
+    remote_version=$(curl -sSL "$github_url" 2>/dev/null | head -50 | grep -oP 'Версия: \K[0-9.]+' | head -1)
+    
+    if [ -z "$remote_version" ]; then
+        print_warning "Не удалось проверить обновления"
+        return 1
+    fi
+    
+    if [ "$remote_version" != "$local_version" ]; then
+        echo ""
+        print_warning "Доступна новая версия скрипта: $remote_version (текущая: $local_version)"
+        echo ""
+        echo -e "${CYAN}Хотите обновить скрипт? (y/n)${NC}"
+        
+        # ВАЖНО: Перенаправляем stdin для чтения
+        exec < /dev/tty
+        read -p "➤ " update_choice
+        
+        if [[ "$update_choice" == "y" ]] || [[ "$update_choice" == "Y" ]]; then
+            print_info "Скачиваю обновленную версию..."
+            curl -sSL "$github_url" > /tmp/install-vpn-bot-new.sh
+            chmod +x /tmp/install-vpn-bot-new.sh
+            print_success "Скрипт обновлен! Перезапускаю..."
+            sleep 1
+            exec bash /tmp/install-vpn-bot-new.sh
+            exit 0
+        else
+            print_info "Продолжаю с текущей версией"
+        fi
+    else
+        print_success "Используется актуальная версия: $local_version"
+    fi
+}
+
 # ============================================
 # ГЛАВНАЯ ФУНКЦИЯ
 # ============================================
@@ -756,19 +797,31 @@ main() {
             print_warning "Статус: 🔴 Остановлен"
         fi
         
+        # Проверяем обновления скрипта
+        echo ""
+        check_for_updates
+        
         echo ""
         echo -e "${CYAN}Что вы хотите сделать?${NC}"
         echo "1) Открыть меню управления"
         echo "2) Переустановить бота (удалит текущую конфигурацию)"
-        echo "3) Выход"
+        echo "3) Обновить только код бота (сохранит настройки)"
+        echo "4) Выход"
         echo ""
+        
+        # ВАЖНО: Перенаправляем stdin для корректного чтения
+        exec < /dev/tty
         read -p "➤ Выберите действие: " action
         
         case $action in
             1)
                 # Открываем меню
-                source /root/vpn-bot/menu.sh
-                menu_loop
+                if [ -f "/root/vpn-bot/menu.sh" ]; then
+                    source /root/vpn-bot/menu.sh
+                    menu_loop
+                else
+                    print_error "Файл меню не найден. Переустановите бота."
+                fi
                 exit 0
                 ;;
             2)
@@ -793,7 +846,56 @@ main() {
                     exit 0
                 fi
                 ;;
-            3|*)
+            3)
+                # Обновление только кода бота (сохраняем .env)
+                echo ""
+                print_info "Обновляю код бота (настройки сохранятся)..."
+                
+                # Создаем резервную копию .env
+                if [ -f "/root/vpn-bot/.env" ]; then
+                    cp /root/vpn-bot/.env /tmp/vpn-bot-env-backup
+                    print_success "Настройки сохранены"
+                fi
+                
+                # Останавливаем бота
+                systemctl stop vpn-bot.service 2>/dev/null || true
+                
+                # Скачиваем новый скрипт
+                TEMP_SCRIPT="/tmp/update_script_$$.sh"
+                curl -sSL https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh > "$TEMP_SCRIPT" 2>/dev/null || {
+                    print_error "Не удалось загрузить скрипт"
+                    exit 1
+                }
+                
+                # Извлекаем код бота
+                MARKER_LINE=$(grep -n "^__BOT_CODE_BELOW__" "$TEMP_SCRIPT" 2>/dev/null | cut -d: -f1)
+                if [ -n "$MARKER_LINE" ]; then
+                    tail -n +$((MARKER_LINE + 1)) "$TEMP_SCRIPT" > /root/vpn-bot/vpn_bot.py
+                    chmod +x /root/vpn-bot/vpn_bot.py
+                    print_success "Код бота обновлен"
+                fi
+                
+                # Восстанавливаем .env
+                if [ -f "/tmp/vpn-bot-env-backup" ]; then
+                    mv /tmp/vpn-bot-env-backup /root/vpn-bot/.env
+                    chmod 600 /root/vpn-bot/.env
+                fi
+                
+                rm -f "$TEMP_SCRIPT"
+                
+                # Перезапускаем бота
+                systemctl start vpn-bot.service
+                sleep 2
+                
+                if systemctl is-active --quiet vpn-bot.service; then
+                    print_success "Бот успешно обновлен и запущен!"
+                else
+                    print_error "Ошибка запуска бота после обновления"
+                    journalctl -u vpn-bot.service -n 20 --no-pager
+                fi
+                exit 0
+                ;;
+            4|*)
                 echo "Выход"
                 exit 0
                 ;;
@@ -815,12 +917,17 @@ main() {
     # После установки спрашиваем, открыть ли меню
     echo ""
     echo -e "${CYAN}Хотите открыть меню управления сейчас? (y/n)${NC}"
+    
+    # ВАЖНО: Перенаправляем stdin для корректного чтения
+    exec < /dev/tty
     read -p "➤ " open_menu
+    
     if [[ "$open_menu" == "y" ]] || [[ "$open_menu" == "Y" ]]; then
         source /root/vpn-bot/menu.sh
         menu_loop
     fi
 }
+
 
 # ============================================
 # ТЕРМИНАЛЬНОЕ МЕНЮ УПРАВЛЕНИЯ (BASH)

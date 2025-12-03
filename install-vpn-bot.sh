@@ -2,7 +2,7 @@
 
 # ============================================
 # VPN Telegram Bot - Auto Installer
-# Версия: 3.6 (c терминальным меню и автообновлением)
+# Версия: 3.6 (исправлен VLESS конфиг и автообновление)
 # ============================================
 
 set -e  # Остановить на ошибке
@@ -21,7 +21,7 @@ print_banner() {
     clear
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════╗"
-    echo "║        VPN TELEGRAM BOT INSTALLER v3.6               ║"
+    echo "║        VPN TELEGRAM BOT INSTALLER v${SCRIPT_VERSION}               ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
@@ -776,13 +776,21 @@ check_for_updates() {
     
     # Если скрипт запущен локально
     if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
-        # Ищем "v3.4" или "3.4" в первых 10 строках
+        # Ищем "v3.X" или "3.X" в первых 10 строках
         local_version=$(head -10 "${BASH_SOURCE[0]}" | grep -oP '(?:v|Версия: )\K[0-9.]+' | head -1)
     fi
     
-    # Если версию не удалось определить, используем значение по умолчанию
+    # Если версию не удалось определить - пробуем fallback
     if [ -z "$local_version" ]; then
-        local_version="3.4"  # ВАЖНО: Синхронизируйте с версией в заголовке!
+        if [ -f "/tmp/install-vpn-bot-latest.sh" ]; then
+            local_version=$(head -20 /tmp/install-vpn-bot-latest.sh 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
+        fi
+    fi
+
+    # Если все еще пусто - пропускаем проверку
+    if [ -z "$local_version" ]; then
+        print_warning "Не удалось определить текущую версию"
+        return 1
     fi
     
     local github_url="https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh"
@@ -797,7 +805,7 @@ check_for_updates() {
         return 1
     fi
     
-    # Функция сравнения версий (3.4 > 3.2)
+    # Функция сравнения версий (3.6 > 3.4)
     version_greater() {
         test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"
     }
@@ -844,6 +852,12 @@ check_for_updates() {
 # ГЛАВНАЯ ФУНКЦИЯ
 # ============================================
 main() {
+    # Извлекаем версию из заголовка скрипта для использования в баннере
+    SCRIPT_VERSION=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
+    if [ -z "$SCRIPT_VERSION" ]; then
+        SCRIPT_VERSION="3.6"  # Fallback на случай если не удалось извлечь
+    fi
+
     print_banner
     check_root
     
@@ -1885,6 +1899,7 @@ class VPNManager:
                     stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
                 network = stream_settings.get('network', 'tcp')
                 params.append(f"type={network}")
+                params.append("encryption=none")
                 security = stream_settings.get('security', 'none')
                 params.append(f"security={security}")
                 params.append("flow=xtls-rprx-vision")

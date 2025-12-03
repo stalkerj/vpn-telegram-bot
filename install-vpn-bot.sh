@@ -769,6 +769,7 @@ main() {
                 # Открываем меню
                 source /root/vpn-bot/menu.sh
                 menu_loop
+                exit 0
                 ;;
             2)
                 # Переустановка
@@ -786,12 +787,13 @@ main() {
                     systemctl daemon-reload
                     print_success "Старая установка удалена"
                     sleep 2
-                    # Продолжаем установку
+                    # Продолжаем установку ниже
                 else
                     echo "Отменено"
                     exit 0
                 fi
-                else
+                ;;
+            3|*)
                 echo "Выход"
                 exit 0
                 ;;

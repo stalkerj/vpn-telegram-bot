@@ -357,29 +357,29 @@ install_bot() {
     show_spinner $! "Настройка изолированного Python окружения"
     print_success "Виртуальное окружение создано"
 
-    # Активируем и устанавливаем зависимости
-    print_info "Устанавливаем Python библиотеки..."
-    source vpn-bot-env/bin/activate
+# Активируем и устанавливаем зависимости
+print_info "Устанавливаем Python библиотеки..."
+source vpn-bot-env/bin/activate
+echo ""
+print_info "→ Обновляем pip..."
+pip install --upgrade pip > /tmp/pip_upgrade.log 2>&1
 
-    echo ""
-    print_info "→ Обновляем pip..."
-    pip install --upgrade pip > /tmp/pip_upgrade.log 2>&1
+print_info "→ Устанавливаем библиотеки:"
+echo "  • pyTelegramBotAPI (Telegram Bot API)"
+echo "  • requests (HTTP клиент)"
+echo "  • qrcode (генерация QR-кодов)"
+echo "  • Pillow (работа с изображениями для QR-кодов)"
+echo "  • python-dotenv (переменные окружения)"
+echo "  • APScheduler (планировщик задач)"
+echo "  • urllib3 (HTTP библиотека)"
+echo ""
 
-    print_info "→ Устанавливаем библиотеки:"
-    echo "   • pyTelegramBotAPI (Telegram Bot API)"
-    echo "   • requests (HTTP клиент)"
-    echo "   • qrcode (генерация QR-кодов)"
-    echo "   • python-dotenv (переменные окружения)"
-    echo "   • APScheduler (планировщик задач)"
-    echo "   • urllib3 (HTTP библиотека)"
-    echo ""
+{
+pip install pyTelegramBotAPI requests qrcode Pillow python-dotenv APScheduler urllib3 > /tmp/pip_install.log 2>&1
+} &
+show_spinner $! "Загрузка и установка Python пакетов"
 
-    {
-        pip install pyTelegramBotAPI requests qrcode python-dotenv APScheduler urllib3 > /tmp/pip_install.log 2>&1
-    } &
-    show_spinner $! "Загрузка и установка Python пакетов"
-
-    print_success "Python библиотеки установлены"
+print_success "Python библиотеки установлены"
 
     # Создаем .env файл
     print_info "Создаем файл конфигурации .env..."
@@ -409,6 +409,141 @@ EOF
 
     chmod 600 "$BOT_DIR/.env"
     print_success "Файл .env создан и защищен"
+
+    # Создаем файл с функциями меню
+print_info "Создаем скрипт управления меню..."
+cat > "$BOT_DIR/menu.sh" << 'MENU_EOF'
+#!/bin/bash
+
+# Цветовые переменные
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+menu_loop() {
+    while true; do
+        clear
+        echo -e "${CYAN}╔════ VPN TELEGRAM BOT: МЕНЮ ═══════════════╗${NC}"
+        echo "1) Статус бота"
+        echo "2) Список серверов"
+        echo "3) Перезапустить бота"
+        echo "4) Показать логи"
+        echo "5) Редактировать конфигурацию"
+        echo "6) Полное удаление бота"
+        echo "0) Выход"
+        echo ""
+        read -p "➤ Выберите действие: " choice
+        
+        case $choice in
+            1) menu_status ;;
+            2) menu_list_servers ;;
+            3) menu_restart_bot ;;
+            4) menu_show_logs ;;
+            5) menu_edit_config ;;
+            6) menu_remove_bot ;;
+            0) break ;;
+            *) echo -e "${RED}Неверный выбор!${NC}"; sleep 1 ;;
+        esac
+    done
+}
+
+menu_status() {
+    echo ""
+    echo -e "${CYAN}--- Статус VPN бота ---${NC}"
+    systemctl status vpn-bot.service --no-pager -n 10
+    echo ""
+    echo -e "${GREEN}Время работы:${NC}"
+    systemctl show vpn-bot.service --property=ActiveEnterTimestamp --no-pager
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_list_servers() {
+    local envfile="/root/vpn-bot/.env"
+    echo ""
+    echo -e "${CYAN}--- Список серверов ---${NC}"
+    if [ -f "$envfile" ]; then
+        echo ""
+        grep "^# Server" "$envfile" 2>/dev/null || echo "Серверы не найдены"
+        echo ""
+        grep "^COUNTRY_NAME_" "$envfile" 2>/dev/null | while read line; do
+            server_name=$(echo "$line" | cut -d'=' -f2)
+            server_num=$(echo "$line" | grep -oP 'COUNTRY_NAME_\K[0-9]+')
+            echo "Сервер $server_num: $server_name"
+            grep "^XUI_HOST_$server_num=" "$envfile" 2>/dev/null
+            grep "^SERVER_IP_$server_num=" "$envfile" 2>/dev/null
+            echo ""
+        done
+    else
+        echo "Файл конфигурации не найден"
+    fi
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_restart_bot() {
+    echo ""
+    echo -e "${YELLOW}Перезапуск службы vpn-bot...${NC}"
+    systemctl restart vpn-bot.service
+    sleep 2
+    systemctl status vpn-bot.service --no-pager -n 10
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_show_logs() {
+    echo ""
+    echo -e "${CYAN}--- Последние 50 строк логов ---${NC}"
+    journalctl -u vpn-bot -n 50 --no-pager
+    echo ""
+    echo -e "${GREEN}Для просмотра в реальном времени: journalctl -u vpn-bot -f${NC}"
+    echo ""
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_edit_config() {
+    echo ""
+    echo -e "${CYAN}--- Редактирование конфигурации ---${NC}"
+    echo "Открываю редактор nano..."
+    sleep 1
+    nano /root/vpn-bot/.env
+    echo ""
+    echo -e "${YELLOW}После изменения конфигурации перезапустите бота (пункт 3)${NC}"
+    read -p "Нажмите Enter для возврата..." tmp
+}
+
+menu_remove_bot() {
+    echo ""
+    echo -e "${RED}!!! ВНИМАНИЕ !!!${NC}"
+    echo "Это действие полностью удалит VPN Telegram Bot:"
+    echo "- Службу systemd"
+    echo "- Виртуальное окружение"
+    echo "- Все файлы в /root/vpn-bot"
+    echo "- Команду vpn-bot"
+    echo ""
+    read -p "Введите YES для подтверждения: " confirm1
+    [ "$confirm1" != "YES" ] && echo "Отменено" && sleep 1 && return
+    
+    read -p "Точно? Введите УДАЛИТЬ: " confirm2
+    [ "$confirm2" != "УДАЛИТЬ" ] && echo "Отменено" && sleep 1 && return
+    
+    systemctl stop vpn-bot.service 2>/dev/null || true
+    systemctl disable vpn-bot.service 2>/dev/null || true
+    rm -f /etc/systemd/system/vpn-bot.service
+    rm -f /usr/local/bin/vpn-bot
+    rm -rf /root/vpn-bot
+    systemctl daemon-reload
+    
+    echo -e "${GREEN}VPN Bot полностью удалён!${NC}"
+    sleep 2
+    exit 0
+}
+MENU_EOF
+
+chmod +x "$BOT_DIR/menu.sh"
+print_success "Скрипт меню создан"
 
     # Извлекаем код бота (ИСПРАВЛЕНО для работы с pipe)
     print_info "Записываем код бота..."
@@ -534,6 +669,10 @@ show_completion() {
     print_success "VPN Telegram Bot успешно установлен и запущен!"
     echo ""
 
+    echo -e "${CYAN}🎯 Быстрый доступ к меню:${NC}"
+    echo "   Введите команду: vpn-bot"
+    echo ""
+
     echo -e "${CYAN}📍 Информация об установке:${NC}"
     echo "   • Директория:    /root/vpn-bot"
     echo "   • Конфигурация:  /root/vpn-bot/.env"
@@ -567,6 +706,26 @@ show_completion() {
 
     print_success "Установка завершена! Спасибо за использование! 🚀"
     echo ""
+
+    # НОВОЕ: Создаем глобальную команду vpn-bot
+    print_info "Создаем команду vpn-bot..."
+    cat > /usr/local/bin/vpn-bot << 'EOF'
+#!/bin/bash
+# VPN Bot Menu Launcher
+source /root/vpn-bot/menu.sh
+menu_loop
+EOF
+    chmod +x /usr/local/bin/vpn-bot
+    print_success "Команда vpn-bot создана! Теперь вы можете запустить меню из любого места: vpn-bot"
+    echo ""
+}
+
+check_if_installed() {
+    if [ -d "/root/vpn-bot" ] && [ -f "/etc/systemd/system/vpn-bot.service" ] && [ -f "/root/vpn-bot/.env" ]; then
+        return 0  # Установлен
+    else
+        return 1  # Не установлен
+    fi
 }
 
 # ============================================
@@ -574,25 +733,91 @@ show_completion() {
 # ============================================
 main() {
     print_banner
-
     check_root
+    
+    # Проверяем, установлен ли бот
+    if check_if_installed; then
+        clear
+        echo -e "${GREEN}"
+        echo "╔═══════════════════════════════════════════════════════╗"
+        echo "║                                                       ║"
+        echo "║     ✅ VPN TELEGRAM BOT УЖЕ УСТАНОВЛЕН!             ║"
+        echo "║                                                       ║"
+        echo "╚═══════════════════════════════════════════════════════╝"
+        echo -e "${NC}"
+        echo ""
+        print_success "Бот успешно установлен и работает!"
+        echo ""
+        
+        # Проверяем статус
+        if systemctl is-active --quiet vpn-bot.service; then
+            print_success "Статус: 🟢 Работает"
+        else
+            print_warning "Статус: 🔴 Остановлен"
+        fi
+        
+        echo ""
+        echo -e "${CYAN}Что вы хотите сделать?${NC}"
+        echo "1) Открыть меню управления"
+        echo "2) Переустановить бота (удалит текущую конфигурацию)"
+        echo "3) Выход"
+        echo ""
+        read -p "➤ Выберите действие: " action
+        
+        case $action in
+            1)
+                # Открываем меню
+                source /root/vpn-bot/menu.sh
+                menu_loop
+                ;;
+            2)
+                # Переустановка
+                echo ""
+                echo -e "${RED}⚠️ ВНИМАНИЕ!${NC}"
+                echo "Переустановка удалит все текущие настройки и конфигурацию!"
+                read -p "Продолжить? (YES для подтверждения): " confirm
+                if [ "$confirm" == "YES" ]; then
+                    print_info "Удаляем текущую установку..."
+                    systemctl stop vpn-bot.service 2>/dev/null || true
+                    systemctl disable vpn-bot.service 2>/dev/null || true
+                    rm -f /etc/systemd/system/vpn-bot.service
+                    rm -f /usr/local/bin/vpn-bot
+                    rm -rf /root/vpn-bot
+                    systemctl daemon-reload
+                    print_success "Старая установка удалена"
+                    sleep 2
+                    # Продолжаем установку
+                else
+                    echo "Отменено"
+                    exit 0
+                fi
+        else
+                echo "Выход"
+                exit 0
+                ;;
+        esac
+    fi
+    
+    # Если бот не установлен или выбрана переустановка - продолжаем обычную установку
     detect_os
     check_requirements
-
     sleep 2
-
     update_system
     install_dependencies
     collect_config
     install_bot
     setup_service
     start_bot
-
     show_completion
-
-    # После установки запускаем меню (опционально)
     
-    post_install_menu
+    # После установки спрашиваем, открыть ли меню
+    echo ""
+    echo -e "${CYAN}Хотите открыть меню управления сейчас? (y/n)${NC}"
+    read -p "➤ " open_menu
+    if [[ "$open_menu" == "y" ]] || [[ "$open_menu" == "Y" ]]; then
+        source /root/vpn-bot/menu.sh
+        menu_loop
+    fi
 }
 
 # ============================================

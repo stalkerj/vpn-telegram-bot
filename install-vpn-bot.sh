@@ -2,7 +2,7 @@
 
 # ============================================
 # VPN Telegram Bot - Auto Installer
-# Версия: 3.2 (c терминальным меню)
+# Версия: 3.3 (c терминальным меню и автообновлением)
 # ============================================
 
 set -e  # Остановить на ошибке
@@ -21,7 +21,7 @@ print_banner() {
     clear
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════╗"
-    echo "║        VPN TELEGRAM BOT INSTALLER v3.2               ║"
+    echo "║        VPN TELEGRAM BOT INSTALLER v3.3               ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
@@ -745,42 +745,69 @@ check_if_installed() {
 
 # Функция проверки обновлений скрипта
 check_for_updates() {
-    local local_version="3.0"
+    # Читаем версию из текущего скрипта
+    local local_version=""
+    
+    # Если скрипт запущен локально
+    if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
+        local_version=$(head -10 "${BASH_SOURCE[0]}" | grep -oP 'Версия: \K[0-9.]+' | head -1)
+    fi
+    
+    # Если версию не удалось определить, используем значение по умолчанию
+    if [ -z "$local_version" ]; then
+        local_version="3.2"
+    fi
+    
     local github_url="https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh"
     
-    print_info "Проверяю наличие обновлений..."
+    print_info "Проверяю наличие обновлений (текущая версия: $local_version)..."
     
     # Скачиваем первые 50 строк для проверки версии
     remote_version=$(curl -sSL "$github_url" 2>/dev/null | head -50 | grep -oP 'Версия: \K[0-9.]+' | head -1)
     
     if [ -z "$remote_version" ]; then
-        print_warning "Не удалось проверить обновления"
+        print_warning "Не удалось проверить обновления на GitHub"
         return 1
     fi
     
+    # Сравниваем версии
     if [ "$remote_version" != "$local_version" ]; then
         echo ""
-        print_warning "Доступна новая версия скрипта: $remote_version (текущая: $local_version)"
+        print_warning "Доступна новая версия скрипта: $remote_version"
         echo ""
-        echo -e "${CYAN}Хотите обновить скрипт? (y/n)${NC}"
+        echo -e "${CYAN}Хотите обновить скрипт установки? (y/n)${NC}"
+        echo -e "${YELLOW}Примечание: Это обновит только установщик, не код бота${NC}"
+        echo ""
         
         # ВАЖНО: Перенаправляем stdin для чтения
         exec < /dev/tty
         read -p "➤ " update_choice
         
         if [[ "$update_choice" == "y" ]] || [[ "$update_choice" == "Y" ]]; then
-            print_info "Скачиваю обновленную версию..."
-            curl -sSL "$github_url" > /tmp/install-vpn-bot-new.sh
-            chmod +x /tmp/install-vpn-bot-new.sh
-            print_success "Скрипт обновлен! Перезапускаю..."
-            sleep 1
-            exec bash /tmp/install-vpn-bot-new.sh
-            exit 0
+            print_info "Скачиваю обновленную версию установщика..."
+            
+            local temp_installer="/tmp/install-vpn-bot-v${remote_version}.sh"
+            
+            if curl -sSL "$github_url" > "$temp_installer" 2>/dev/null; then
+                chmod +x "$temp_installer"
+                print_success "Установщик обновлен до версии $remote_version"
+                
+                # Сохраняем информацию о том, что мы уже установлены
+                export VPN_BOT_ALREADY_INSTALLED="true"
+                
+                print_info "Перезапускаю обновленный установщик..."
+                sleep 2
+                exec bash "$temp_installer"
+                exit 0
+            else
+                print_error "Не удалось скачать обновление"
+                return 1
+            fi
         else
-            print_info "Продолжаю с текущей версией"
+            print_info "Продолжаю с текущей версией $local_version"
         fi
     else
-        print_success "Используется актуальная версия: $local_version"
+        print_success "Используется актуальная версия: $local_version ✓"
     fi
 }
 

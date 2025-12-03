@@ -791,7 +791,7 @@ main() {
                     echo "Отменено"
                     exit 0
                 fi
-        else
+                else
                 echo "Выход"
                 exit 0
                 ;;

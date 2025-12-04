@@ -533,7 +533,7 @@ menu_loop() {
                 echo ""
                 
                 # Генерируем QR-код для доната
-                if command -v qrencode &> /dev/null && [ -t 0 ]; then
+                if command -v qrencode &> /dev/null && [ -t 1 ]; then
                     qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
                     echo ""
                 else
@@ -956,7 +956,7 @@ show_completion() {
     echo ""
     
     # QR-код для доната (только если терминал интерактивный)
-    if command -v qrencode &> /dev/null && [ -t 0 ]; then
+    if command -v qrencode &> /dev/null && [ -t 1 ]; then
         echo -e "${CYAN}Поддержите проект:${NC}"
         echo ""
         qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
@@ -1193,7 +1193,7 @@ main() {
         echo ""
         
         # QR-код для доната (только если терминал интерактивный)
-        if command -v qrencode &> /dev/null && [ -t 0 ]; then
+        if command -v qrencode &> /dev/null && [ -t 1 ]; then
             echo -e "${CYAN}Поддержите проект:${NC}"
             echo ""
             qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
@@ -1366,7 +1366,7 @@ menu_loop() {
                 echo ""
                 
                 # Генерируем QR-код для доната
-                if command -v qrencode &> /dev/null && [ -t 0 ]; then
+                if command -v qrencode &> /dev/null && [ -t 1 ]; then
                     qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
                     echo ""
                 else

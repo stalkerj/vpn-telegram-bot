@@ -899,11 +899,7 @@ main() {
         # Проверяем обновления скрипта
         echo ""
     # Проверяем обновления только если скрипт доступен как файл
-    if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
-        check_for_updates
-    else
-        print_info "Проверка обновлений пропущена (скрипт запущен через pipe)"
-    fi
+    check_for_updates
         
         echo ""
         echo -e "${CYAN}Что вы хотите сделать?${NC}"

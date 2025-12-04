@@ -1370,8 +1370,7 @@ menu_loop() {
         echo "6) Полное удаление бота"
         echo "0) Выход"
         echo ""
-        read -p "➤ Выберите действие: " choice
-        
+
         case $choice in
             1) menu_add_server ;;
             2) menu_edit_server ;;
@@ -1390,6 +1389,8 @@ menu_loop() {
                 echo ""
                 echo -e "${CYAN}☕ Поддержать разработчика:${NC}"
                 echo ""
+        
+        read -p "➤ Выберите действие: " choice
                 
                 # Генерируем QR-код для доната
                 if command -v qrencode &> /dev/null && [ -t 1 ]; then

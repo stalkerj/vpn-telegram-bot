@@ -1337,14 +1337,22 @@ main() {
     echo ""
     echo -e "${CYAN}Хотите открыть меню управления сейчас? (y/n)${NC}"
     
-    # ВАЖНО: Перенаправляем stdin для корректного чтения
-    exec < /dev/tty
-    read -p "➤ " open_menu
-    
-    if [[ "$open_menu" == "y" ]] || [[ "$open_menu" == "Y" ]]; then
-        source /root/vpn-bot/menu.sh
-        menu_loop
+    # Проверяем что терминал интерактивный
+    if [ -t 0 ]; then
+        read -p "➤ " open_menu
+        
+        if [[ "$open_menu" =~ ^[yYдД]$ ]]; then
+            if [ -f "/root/vpn-bot/menu.sh" ]; then
+                bash /root/vpn-bot/menu.sh
+            else
+                echo "Ошибка: menu.sh не найден"
+            fi
+        fi
+    else
+        echo "➤ Меню недоступно при установке через curl | bash"
+        echo "   Используйте команду: vpn-bot"
     fi
+
 }
 
 # ============================================

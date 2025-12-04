@@ -2,7 +2,7 @@
 
 # ============================================
 # VPN Telegram Bot - Auto Installer
-# Версия: 3.6 (исправлен VLESS и проверка обновлений)
+# Версия: 3.7 (исправлен VLESS и проверка обновлений)
 # ============================================
 
 set -e  # Остановить на ошибке
@@ -21,7 +21,7 @@ print_banner() {
     clear
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════╗"
-    echo "║        VPN TELEGRAM BOT INSTALLER v${SCRIPT_VERSION}               ║"
+    echo "║        VPN TELEGRAM BOT INSTALLER v${SCRIPT_VERSION}  ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
@@ -671,6 +671,7 @@ start_bot() {
     # Проверяем статус
     if systemctl is-active --quiet vpn-bot.service; then
         print_success "Бот успешно запущен и работает!"
+        save_current_version
     else
         print_error "Ошибка запуска бота!"
         print_info "Показываем последние логи:"
@@ -694,6 +695,7 @@ show_completion() {
     echo ""
 
     print_success "VPN Telegram Bot успешно установлен и запущен!"
+    save_current_version
     echo ""
 
     echo -e "${CYAN}🎯 Быстрый доступ к меню:${NC}"
@@ -770,6 +772,24 @@ check_if_installed() {
 }
 
 # Функция проверки обновлений скрипта
+
+# Сохранение текущей версии скрипта
+save_current_version() {
+    local version_file="/opt/vpn-bot/VERSION"
+    local current_version=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
+
+    if [ -z "$current_version" ]; then
+        current_version="3.6"  # Fallback на текущую версию
+    fi
+
+    # Создаем директорию если нет
+    mkdir -p "$(dirname "$version_file")"
+
+    # Сохраняем версию
+    echo "$current_version" > "$version_file"
+    chmod 644 "$version_file"
+}
+
 check_for_updates() {
     # Читаем версию из текущего скрипта (ищем в заголовке)
     local local_version=""
@@ -863,6 +883,7 @@ main() {
         echo -e "${NC}"
         echo ""
         print_success "Бот успешно установлен и работает!"
+        save_current_version
         echo ""
         
         # Проверяем статус
@@ -972,6 +993,7 @@ main() {
                 
                 if systemctl is-active --quiet vpn-bot.service; then
                     print_success "Бот успешно обновлен и запущен!"
+                    save_current_version
                 else
                     print_error "Ошибка запуска бота после обновления"
                     journalctl -u vpn-bot.service -n 20 --no-pager

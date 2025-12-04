@@ -2,8 +2,77 @@
 
 # ============================================
 # VPN Telegram Bot - Auto Installer
-# Версия: 3.7 (исправлен VLESS и проверка обновлений)
+# Версия: 3.8 (добавлена валидация ввода данных)
 # ============================================
+
+
+# ============================================
+# ФУНКЦИИ ВАЛИДАЦИИ ВВОДА
+# ============================================
+
+# Валидация Telegram Bot Token (формат: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz)
+validate_bot_token() {
+    local token="$1"
+    # Формат: 9-10 цифр, двоеточие, 35 символов (буквы, цифры, дефис, подчеркивание)
+    if [[ "$token" =~ ^[0-9]{9,10}:[A-Za-z0-9_-]{35}$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Валидация Telegram Admin ID (только цифры)
+validate_admin_id() {
+    local id="$1"
+    # Только цифры, минимум 5 символов
+    if [[ "$id" =~ ^[0-9]{5,}$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Валидация URL панели (https://IP:PORT)
+validate_panel_url() {
+    local url="$1"
+    # Формат: https://IP:PORT (без слеша в конце)
+    if [[ "$url" =~ ^https://[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:[0-9]{1,5}$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Валидация пути к панели (должен начинаться с /)
+validate_panel_path() {
+    local path="$1"
+    # Должен начинаться с / и содержать хотя бы один символ после
+    if [[ "$path" =~ ^/[A-Za-z0-9_-]+$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Валидация IP адреса
+validate_ip() {
+    local ip="$1"
+    # Формат: X.X.X.X где X от 0 до 255
+    if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        # Проверяем что каждый октет <= 255
+        IFS='.' read -ra OCTETS <<< "$ip"
+        for octet in "${OCTETS[@]}"; do
+            if [ "$octet" -gt 255 ]; then
+                return 1
+            fi
+        done
+        return 0
+    else
+        return 1
+    fi
+}
+
+
 
 set -e  # Остановить на ошибке
 
@@ -273,23 +342,29 @@ collect_config() {
         while true; do
             echo -ne "${CYAN}🔗 URL панели${NC} (https://server.com:2053): "
             read XUI_HOST
-
-            # Убираем пробелы
             XUI_HOST=$(echo "$XUI_HOST" | tr -d '[:space:]')
-
+            
             if [[ -z "$XUI_HOST" ]]; then
                 print_warning "URL не может быть пустым!"
-            elif [[ ! "$XUI_HOST" =~ ^https?:// ]]; then
-                print_warning "URL должен начинаться с http:// или https://"
+            elif ! validate_panel_url "$XUI_HOST"; then
+                print_warning "⚠️  Неверный формат! Пример: https://1.1.1.1:12345"
             else
                 break
             fi
         done
 
         # Путь к панели
-        echo -ne "${CYAN}📂 Путь к панели${NC} [по умолчанию: /panel]: "
-        read XUI_PATH
-        XUI_PATH=${XUI_PATH:-/panel}
+        while true; do
+            echo -ne "${CYAN}📂 Путь к панели${NC} [по умолчанию: /panel]: "
+            read XUI_PATH
+            XUI_PATH=${XUI_PATH:-/panel}
+            
+            if ! validate_panel_path "$XUI_PATH"; then
+                print_warning "⚠️  Путь должен начинаться с / (например: /kDYLDAOQis3aMfA)"
+            else
+                break
+            fi
+        done
 
         # Username
         echo -ne "${CYAN}👤 Username панели${NC} [по умолчанию: admin]: "
@@ -309,18 +384,16 @@ collect_config() {
             fi
         done
 
-        # Server IP
+        # IP адрес сервера
         while true; do
-            echo -ne "${CYAN}🌐 IP сервера${NC} (внешний IP): "
-            read SERVER_IP
-
-            # Убираем пробелы
-            SERVER_IP=$(echo "$SERVER_IP" | tr -d '[:space:]')
-
-            if [[ -z "$SERVER_IP" ]]; then
+            echo -ne "${CYAN}🌐 IP адрес сервера${NC}: "
+            read XUI_IP
+            XUI_IP=$(echo "$XUI_IP" | tr -d '[:space:]')
+            
+            if [[ -z "$XUI_IP" ]]; then
                 print_warning "IP не может быть пустым!"
-            elif [[ ! "$SERVER_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-                print_warning "Неверный формат IP адреса!"
+            elif ! validate_ip "$XUI_IP"; then
+                print_warning "⚠️  Неверный формат IP! Пример: 84.21.173.216"
             else
                 break
             fi
@@ -779,7 +852,7 @@ save_current_version() {
     local current_version=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
 
     if [ -z "$current_version" ]; then
-        current_version="3.7"  # Fallback на текущую версию
+        current_version="3.8"  # Fallback на текущую версию
     fi
 
     # Создаем директорию если нет
@@ -874,7 +947,7 @@ main() {
 
     # Способ 3: Fallback на встроенную версию (из строки 5 этого файла)
     if [ -z "$SCRIPT_VERSION" ]; then
-        SCRIPT_VERSION="3.7"  # Синхронизируйте с версией в строке 5!
+        SCRIPT_VERSION="3.8"  # Синхронизируйте с версией в строке 5!
     fi
 
     print_banner

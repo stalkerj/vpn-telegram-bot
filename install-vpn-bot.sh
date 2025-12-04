@@ -807,7 +807,7 @@ check_for_updates() {
     
     local github_url="https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh"
     
-    print_info "Проверяю наличие обновлений (текущая версия: $local_version)..."
+    # Тихо проверяем обновления
     
     # Скачиваем первые 50 строк для проверки версии
     remote_version=$(curl -sSL "$github_url" 2>/dev/null | head -50 | grep -oP '(?:v|Версия: )\K[0-9.]+' | head -1)
@@ -853,10 +853,10 @@ check_for_updates() {
                 return 1
             fi
         else
-            print_info "Продолжаю с текущей версией $local_version"
+            # Продолжаем с текущей версией (тихо)
         fi
     else
-        print_success "Используется актуальная версия: $local_version ✓"
+        # Версия актуальна (не показываем сообщение)
     fi
 }
 

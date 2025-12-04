@@ -393,7 +393,7 @@ collect_config() {
             if [[ -z "$XUI_IP" ]]; then
                 print_warning "IP не может быть пустым!"
             elif ! validate_ip "$XUI_IP"; then
-                print_warning "⚠️  Неверный формат IP! Пример: 84.21.173.216"
+                print_warning "⚠️  Неверный формат IP! Пример: 84.211.13.16"
             else
                 break
             fi
@@ -1389,7 +1389,7 @@ menu_loop() {
                 echo ""
                 echo -e "${CYAN}☕ Поддержать разработчика:${NC}"
                 echo ""
-        
+
         read -p "➤ Выберите действие: " choice
                 
                 # Генерируем QR-код для доната

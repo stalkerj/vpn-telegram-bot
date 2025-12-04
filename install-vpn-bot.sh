@@ -759,7 +759,7 @@ EOF
         chmod +x /usr/local/bin/vpn-bot
         print_success "Команда vpn-bot создана!"
     else
-        print_info "Команда vpn-bot уже существует"
+        : # Команда vpn-bot уже существует (не показываем)
     fi
 }
 

@@ -1109,6 +1109,10 @@ check_for_updates() {
                 chmod +x "$temp_installer"
                 print_success "Установщик обновлен до версии $remote_version"
                 
+                # Сохраняем новую версию
+                echo "$remote_version" > "/root/vpn-bot/VERSION"
+
+                
                 print_info "Перезапускаю обновленный установщик..."
                 sleep 2
                 exec bash "$temp_installer"

@@ -1161,7 +1161,6 @@ main() {
         echo -e "${NC}"
         echo ""
         print_success "Бот успешно установлен и работает!"
-        save_current_version
         echo ""
         
         # Проверяем статус

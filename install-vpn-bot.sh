@@ -1063,7 +1063,7 @@ save_current_version() {
     local current_version=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
 
     if [ -z "$current_version" ]; then
-        current_version="3.8"  # Fallback на текущую версию
+        current_version="3.9"  # Fallback на текущую версию
     fi
 
     # Создаем директорию если нет

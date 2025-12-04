@@ -864,18 +864,25 @@ save_current_version() {
 }
 
 check_for_updates() {
-    # Читаем версию из текущего скрипта (ищем в заголовке)
+    # Читаем установленную версию из файла VERSION
     local local_version=""
+    local version_file="/root/vpn-bot/VERSION"
     
-    # Если скрипт запущен локально
-    if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ]; then
-        # Ищем "v${SCRIPT_VERSION}" или "3.4" в первых 10 строках
-        local_version=$(head -10 "${BASH_SOURCE[0]}" | grep -oP '(?:v|Версия: )\K[0-9.]+' | head -1)
+    # Способ 1: Читаем из файла VERSION (основной способ)
+    if [ -f "$version_file" ]; then
+        local_version=$(cat "$version_file" 2>/dev/null | tr -d '[:space:]')
     fi
     
-    # Если версию не удалось определить, используем значение по умолчанию
+    # Способ 2: Если файла нет - ищем в текущем скрипте
     if [ -z "$local_version" ]; then
-        local_version=""  # Автоопределение: Синхронизируйте с версией в заголовке!
+        if [ -f "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "bash" ] && [ "${BASH_SOURCE[0]}" != "-bash" ]; then
+            local_version=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\\K[0-9.]+' | head -1)
+        fi
+    fi
+    
+    # Способ 3: Если все еще пусто - считаем первой установкой
+    if [ -z "$local_version" ]; then
+        local_version="0.0"
     fi
     
     local github_url="https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh"

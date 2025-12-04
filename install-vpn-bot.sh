@@ -848,7 +848,7 @@ check_if_installed() {
 
 # Сохранение текущей версии скрипта
 save_current_version() {
-    local version_file="/opt/vpn-bot/VERSION"
+    local version_file="/root/vpn-bot/VERSION"
     local current_version=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
 
     if [ -z "$current_version" ]; then
@@ -935,8 +935,8 @@ check_for_updates() {
 main() {
     # Извлекаем версию для баннера
     # Способ 1: Читаем из установленного VERSION файла
-    if [ -f "/opt/vpn-bot/VERSION" ]; then
-        SCRIPT_VERSION=$(cat /opt/vpn-bot/VERSION 2>/dev/null | tr -d '[:space:]')
+    if [ -f "/root/vpn-bot/VERSION" ]; then
+        SCRIPT_VERSION=$(cat /root/vpn-bot/VERSION 2>/dev/null | tr -d '[:space:]')
     fi
 
     # Способ 2: Если нет VERSION - берем из заголовка скрипта

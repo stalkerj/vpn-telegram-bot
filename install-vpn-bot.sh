@@ -456,8 +456,8 @@ menu_loop() {
                 echo ""
                 
                 # Генерируем QR-код для доната
-                if command -v qrencode &> /dev/null; then
-                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6"
+                if command -v qrencode &> /dev/null && [ -t 0 ]; then
+                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
                     echo ""
                 else
                     echo -e "${YELLOW}📱 Отсканируйте QR-код или перейдите по ссылке:${NC}"
@@ -779,7 +779,7 @@ save_current_version() {
     local current_version=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
 
     if [ -z "$current_version" ]; then
-        current_version="3.6"  # Fallback на текущую версию
+        current_version="3.7"  # Fallback на текущую версию
     fi
 
     # Создаем директорию если нет
@@ -861,8 +861,21 @@ check_for_updates() {
 # ============================================
 main() {
     # Извлекаем версию для баннера
-    SCRIPT_VERSION=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
-    [ -z "$SCRIPT_VERSION" ] && SCRIPT_VERSION="3.6"
+    # Способ 1: Читаем из установленного VERSION файла
+    if [ -f "/opt/vpn-bot/VERSION" ]; then
+        SCRIPT_VERSION=$(cat /opt/vpn-bot/VERSION 2>/dev/null | tr -d '[:space:]')
+    fi
+
+    # Способ 2: Если нет VERSION - берем из заголовка скрипта
+    if [ -z "$SCRIPT_VERSION" ]; then
+        # При запуске через curl это не сработает, поэтому используем встроенную версию
+        SCRIPT_VERSION=$(head -20 "${BASH_SOURCE[0]}" 2>/dev/null | grep -oP '(?:Версия: )\K[0-9.]+' | head -1)
+    fi
+
+    # Способ 3: Fallback на встроенную версию (из строки 5 этого файла)
+    if [ -z "$SCRIPT_VERSION" ]; then
+        SCRIPT_VERSION="3.7"  # Синхронизируйте с версией в строке 5!
+    fi
 
     print_banner
     check_root
@@ -1064,8 +1077,8 @@ menu_loop() {
                 echo ""
                 
                 # Генерируем QR-код для доната
-                if command -v qrencode &> /dev/null; then
-                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6"
+                if command -v qrencode &> /dev/null && [ -t 0 ]; then
+                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
                     echo ""
                 else
                     echo -e "${YELLOW}📱 Отсканируйте QR-код или перейдите по ссылке:${NC}"

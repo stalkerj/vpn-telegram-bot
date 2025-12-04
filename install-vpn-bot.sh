@@ -456,8 +456,8 @@ menu_loop() {
                 echo ""
                 
                 # Генерируем QR-код для доната
-                if command -v qrencode &> /dev/null && [ -t 0 ]; then
-                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
+                if command -v qrencode &> /dev/null; then
+                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6"
                     echo ""
                 else
                     echo -e "${YELLOW}📱 Отсканируйте QR-код или перейдите по ссылке:${NC}"
@@ -852,11 +852,7 @@ check_for_updates() {
                 print_error "Не удалось скачать обновление"
                 return 1
             fi
-        else
-            # Продолжаем с текущей версией (тихо)
         fi
-    else
-        # Версия актуальна (не показываем сообщение)
     fi
 }
 
@@ -1068,8 +1064,8 @@ menu_loop() {
                 echo ""
                 
                 # Генерируем QR-код для доната
-                if command -v qrencode &> /dev/null && [ -t 0 ]; then
-                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
+                if command -v qrencode &> /dev/null; then
+                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6"
                     echo ""
                 else
                     echo -e "${YELLOW}📱 Отсканируйте QR-код или перейдите по ссылке:${NC}"

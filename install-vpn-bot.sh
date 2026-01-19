@@ -582,7 +582,11 @@ menu_status() {
     echo ""
     read -p "Нажмите Enter для возврата..." tmp
 }
-
+if protocol == "vless":
+    # ✅ ИСПРАВЛЕНИЕ: Используем serverip вместо serverhost
+    server_ip = self.serverconfig['serverip']
+    config = f"vless://{clientid}@{server_ip}:{port}"
+    params = []
 menu_add_server() {
     clear
     echo ""
@@ -2242,7 +2246,6 @@ class VPNManager:
                 params.append("encryption=none")
                 security = stream_settings.get('security', 'none')
                 params.append(f"security={security}")
-                params.append("flow=xtls-rprx-vision")
                 if security == 'reality':
                     reality_settings = stream_settings.get('realitySettings', {})
                     public_key = None
@@ -2270,6 +2273,7 @@ class VPNManager:
                     elif 'spiderX' in reality_settings:
                         spx = reality_settings['spiderX']
                     params.append(f"spx={urllib.parse.quote(spx, safe='')}")
+                    params.append("flow=xtls-rprx-vision")
                 if params:
                     config += "?" + "&".join(params)
                 encoded_email = urllib.parse.quote(user['email'], safe='')

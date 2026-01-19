@@ -730,7 +730,7 @@ XUI_${num}_HOST=$host
 XUI_${num}_PATH=$path
 XUI_${num}_USERNAME=$username
 XUI_${num}_PASSWORD=$password
-XUI_${num}_IP=$ip
+SERVER_IP_${num}=$ip
 EOF
             print_success "Сервер #${num} '$country' записан в конфигурацию"
         done

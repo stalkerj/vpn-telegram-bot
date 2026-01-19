@@ -979,11 +979,11 @@ show_completion() {
     if command -v qrencode &> /dev/null && [ -t 1 ]; then
         echo -e "${CYAN}Поддержите проект:${NC}"
         echo ""
-        qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
+        qrencode -t ANSIUTF8 "https://pay.cloudtips.ru/p/52d42415" 2>/dev/null
         echo ""
     fi
     
-    echo -e "${GREEN}🔗 https://www.tbank.ru/cf/A1Cj74Nvan6${NC}"
+    echo -e "${GREEN}🔗 https://pay.cloudtips.ru/p/52d42415${NC}"
     echo ""
 
 
@@ -1216,11 +1216,11 @@ main() {
         if command -v qrencode &> /dev/null && [ -t 1 ]; then
             echo -e "${CYAN}Поддержите проект:${NC}"
             echo ""
-            qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
+            qrencode -t ANSIUTF8 "https://pay.cloudtips.ru/p/52d42415" 2>/dev/null
             echo ""
         fi
         
-        echo -e "${GREEN}🔗 https://www.tbank.ru/cf/A1Cj74Nvan6${NC}"
+        echo -e "${GREEN}🔗 https://pay.cloudtips.ru/p/52d42415${NC}"
         echo ""
         
         # ВАЖНО: Перенаправляем stdin для корректного чтения
@@ -1396,13 +1396,13 @@ menu_loop() {
                 
                 # Генерируем QR-код для доната
                 if command -v qrencode &> /dev/null && [ -t 1 ]; then
-                    qrencode -t ANSIUTF8 "https://www.tbank.ru/cf/A1Cj74Nvan6" 2>/dev/null
+                    qrencode -t ANSIUTF8 "https://pay.cloudtips.ru/p/52d42415" 2>/dev/null
                     echo ""
                 else
                     echo -e "${YELLOW}📱 Отсканируйте QR-код или перейдите по ссылке:${NC}"
                 fi
                 
-                echo -e "${GREEN}🔗 https://www.tbank.ru/cf/A1Cj74Nvan6${NC}"
+                echo -e "${GREEN}🔗 https://pay.cloudtips.ru/p/52d42415${NC}"
                 echo ""
                 echo -e "${CYAN}Ваша поддержка помогает улучшать проект! ❤️${NC}"
                 echo ""

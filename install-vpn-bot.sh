@@ -387,12 +387,12 @@ collect_config() {
         # IP адрес сервера
         while true; do
             echo -ne "${CYAN}🌐 IP адрес сервера${NC}: "
-            read XUI_IP
-            XUI_IP=$(echo "$XUI_IP" | tr -d '[:space:]')
+            read SERVER_IP
+            SERVER_IP=$(echo "$SERVER_IP" | tr -d '[:space:]')
             
-            if [[ -z "$XUI_IP" ]]; then
+            if [[ -z "$SERVER_IP" ]]; then
                 print_warning "IP не может быть пустым!"
-            elif ! validate_ip "$XUI_IP"; then
+            elif ! validate_ip "$SERVER_IP"; then
                 print_warning "⚠️  Неверный формат IP! Пример: 84.211.13.16"
             else
                 break
@@ -682,12 +682,12 @@ menu_add_server() {
         # IP адрес с валидацией
         while true; do
             echo -ne "${CYAN}🌐 IP адрес сервера${NC}: "
-            read XUI_IP
-            XUI_IP=$(echo "$XUI_IP" | tr -d '[:space:]')
+            read SERVER_IP
+            SERVER_IP=$(echo "$SERVER_IP" | tr -d '[:space:]')
             
-            if [[ -z "$XUI_IP" ]]; then
+            if [[ -z "$SERVER_IP" ]]; then
                 print_warning "IP не может быть пустым!"
-            elif ! validate_ip "$XUI_IP"; then
+            elif ! validate_ip "$SERVER_IP"; then
                 print_warning "⚠️  Неверный формат IP! Пример: 84.21.173.216"
             else
                 break
@@ -695,7 +695,7 @@ menu_add_server() {
         done
         
         # Сохраняем данные сервера
-        new_servers+=("${next_server_num}|${SERVER_NAME}|${XUI_HOST}|${XUI_PATH}|${XUI_USERNAME}|${XUI_PASSWORD}|${XUI_IP}")
+        new_servers+=("${next_server_num}|${SERVER_NAME}|${XUI_HOST}|${XUI_PATH}|${XUI_USERNAME}|${XUI_PASSWORD}|${SERVER_IP}")
         
         echo ""
         print_success "Сервер #${next_server_num} '${SERVER_NAME}' добавлен"

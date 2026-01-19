@@ -602,13 +602,13 @@ menu_add_server() {
     
     # Определяем номер следующего сервера
     local server_count=0
-    local next_server_num=1
-    
-    # Ищем максимальный номер сервера
-    while grep -q "^XUI_${next_server_num}_HOST=" "$env_file" 2>/dev/null; do
-        server_count=$next_server_num
-        ((next_server_num++))
-    done
+local next_server_num=1
+
+# Ищем максимальный номер сервера
+while grep -q "^XUI_HOST_${next_server_num}=" "$env_file" 2>/dev/null; do
+    server_count=$next_server_num
+    ((next_server_num++))
+done
     
     echo -e "${GREEN}Текущее количество серверов: ${server_count}${NC}"
     echo -e "${CYAN}Добавляем сервер #${next_server_num}${NC}"

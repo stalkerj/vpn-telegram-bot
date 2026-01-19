@@ -2,7 +2,7 @@
 
 # VPN Telegram Bot - Auto Installer Script
 # Автоматический установщик VPN Telegram бота для 3x-ui панели
-# Версия: 2.0 (исправленная)
+# Версия: 2.1 (исправлена проверка версии Python)
 # Дата: 19.01.2026
 
 set -e
@@ -39,6 +39,30 @@ check_error() {
     fi
 }
 
+# Функция сравнения версий
+version_compare() {
+    if [[ $1 == $2 ]]; then
+        return 0
+    fi
+    local IFS=.
+    local i ver1=($1) ver2=($2)
+    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++)); do
+        ver1[i]=0
+    done
+    for ((i=0; i<${#ver1[@]}; i++)); do
+        if [[ -z ${ver2[i]} ]]; then
+            ver2[i]=0
+        fi
+        if ((10#${ver1[i]} > 10#${ver2[i]})); then
+            return 1
+        fi
+        if ((10#${ver1[i]} < 10#${ver2[i]})); then
+            return 2
+        fi
+    done
+    return 0
+}
+
 # Приветствие
 clear
 print_color "╔════════════════════════════════════════════════╗" "$BLUE"
@@ -60,15 +84,25 @@ if command -v python3 &> /dev/null; then
     PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
     log "Обнаружена версия Python: $PYTHON_VERSION"
 
-    if (( $(echo "$PYTHON_VERSION < $PYTHON_MIN_VERSION" | bc -l) )); then
-        print_color "⚠️  Требуется Python >= $PYTHON_MIN_VERSION, обнаружена версия $PYTHON_VERSION" "$RED"
-        exit 1
+    version_compare "$PYTHON_VERSION" "$PYTHON_MIN_VERSION"
+    result=$?
+
+    if [ $result -eq 2 ]; then
+        print_color "❌ Требуется Python >= $PYTHON_MIN_VERSION, обнаружена версия $PYTHON_VERSION" "$RED"
+        print_color "Установка более новой версии Python..." "$YELLOW"
+        apt update && apt install -y python3 python3-pip python3-venv
+        check_error "Не удалось обновить Python3"
+        PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+        log "Обновлена версия Python: $PYTHON_VERSION"
     fi
+
     print_color "✅ Python $PYTHON_VERSION установлен" "$GREEN"
 else
     print_color "⚠️  Python3 не найден, устанавливаем..." "$YELLOW"
     apt update && apt install -y python3 python3-pip python3-venv
     check_error "Не удалось установить Python3"
+    PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+    print_color "✅ Python $PYTHON_VERSION установлен" "$GREEN"
 fi
 
 # Проверка существующей установки
@@ -99,7 +133,7 @@ check_error "Не удалось обновить список пакетов"
 
 # Установка зависимостей
 print_color "📦 Установка системных зависимостей..." "$YELLOW"
-apt install -y git python3-pip python3-venv curl wget nano bc jq >> "$LOG_FILE" 2>&1
+apt install -y git python3-pip python3-venv curl wget nano jq >> "$LOG_FILE" 2>&1
 check_error "Не удалось установить зависимости"
 
 # Клонирование репозитория

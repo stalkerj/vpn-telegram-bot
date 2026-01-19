@@ -1167,7 +1167,7 @@ main() {
 
     # Способ 3: Fallback на встроенную версию (из строки 5 этого файла)
     if [ -z "$SCRIPT_VERSION" ]; then
-        SCRIPT_VERSION="3.8"  # Синхронизируйте с версией в строке 5!
+        SCRIPT_VERSION="3.9"  # Синхронизируйте с версией в строке 5!
     fi
 
     print_banner

@@ -2273,7 +2273,7 @@ class VPNManager:
                 if params:
                     config += "?" + "&".join(params)
                 encoded_email = urllib.parse.quote(user['email'], safe='')
-                config += f"#VLESS-{encoded_email}"
+                config += f"#vless-{encoded_email}"
                 return config
             else:
                 return f"{protocol}://config_for_{user['email']}@{server_host}:{port}"

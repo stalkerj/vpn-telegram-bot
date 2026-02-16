@@ -461,6 +461,16 @@ print_success "Python библиотеки установлены"
 TELEGRAM_BOT_TOKEN=$BOT_TOKEN
 ADMIN_USER_ID=$ADMIN_ID
 
+# Statistics Settings
+DAILY_STATS_ENABLED=True
+DAILY_STATS_HOUR=9
+DAILY_STATS_MINUTE=0
+
+WEEKLY_STATS_ENABLED=True
+WEEKLY_STATS_DAY=mon
+WEEKLY_STATS_HOUR=10
+WEEKLY_STATS_MINUTE=0
+
 EOF
 
     # Добавляем серверы в .env
@@ -505,8 +515,10 @@ menu_loop() {
         echo "4) Перезапустить бота"
         echo "5) Показать логи"
         echo "6) Редактировать конфигурацию"
-        echo "7) Полное удаление бота"
+        echo "7) Статистика"
+        echo "8) Полное удаление бота"
         echo "0) Выход"
+
 
         echo ""
         
@@ -538,7 +550,8 @@ menu_loop() {
             4) menu_restart_bot ;;
             5) menu_show_logs ;;
             6) menu_edit_config ;;
-            7) menu_remove_bot ;;
+            7) menu_statistics ;;
+            8) menu_remove_bot ;;
             0)
 
                 clear
@@ -824,6 +837,165 @@ menu_remove_bot() {
     echo -e "${GREEN}VPN Bot полностью удалён!${NC}"
     sleep 2
     exit 0
+}
+
+menu_statistics() {
+    while true; do
+        clear
+        echo ""
+        echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║        Настройки статистики бота          ║${NC}"
+        echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+        echo ""
+        
+        local env_file="/root/vpn-bot/.env"
+        
+        # Читаем текущие настройки
+        local daily_enabled=$(grep "^DAILY_STATS_ENABLED=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        local daily_hour=$(grep "^DAILY_STATS_HOUR=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        local daily_minute=$(grep "^DAILY_STATS_MINUTE=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        
+        local weekly_enabled=$(grep "^WEEKLY_STATS_ENABLED=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        local weekly_day=$(grep "^WEEKLY_STATS_DAY=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        local weekly_hour=$(grep "^WEEKLY_STATS_HOUR=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        local weekly_minute=$(grep "^WEEKLY_STATS_MINUTE=" "$env_file" 2>/dev/null | cut -d'=' -f2)
+        
+        # Значения по умолчанию
+        daily_enabled=${daily_enabled:-True}
+        daily_hour=${daily_hour:-9}
+        daily_minute=${daily_minute:-0}
+        
+        weekly_enabled=${weekly_enabled:-True}
+        weekly_day=${weekly_day:-mon}
+        weekly_hour=${weekly_hour:-10}
+        weekly_minute=${weekly_minute:-0}
+        
+        # Отображение текущих настроек
+        echo -e "${GREEN}📊 Ежедневная статистика:${NC}"
+        echo "   Статус: $([ "$daily_enabled" == "True" ] && echo "✅ Включена" || echo "❌ Выключена")"
+        echo "   Время отправки: ${daily_hour}:$(printf "%02d" $daily_minute)"
+        echo ""
+        
+        echo -e "${GREEN}📈 Еженедельная статистика:${NC}"
+        echo "   Статус: $([ "$weekly_enabled" == "True" ] && echo "✅ Включена" || echo "❌ Выключена")"
+        
+        case $weekly_day in
+            mon) day_name="Понедельник" ;;
+            tue) day_name="Вторник" ;;
+            wed) day_name="Среда" ;;
+            thu) day_name="Четверг" ;;
+            fri) day_name="Пятница" ;;
+            sat) day_name="Суббота" ;;
+            sun) day_name="Воскресенье" ;;
+            *) day_name="Понедельник" ;;
+        esac
+        
+        echo "   День отправки: ${day_name}"
+        echo "   Время отправки: ${weekly_hour}:$(printf "%02d" $weekly_minute)"
+        echo ""
+        
+        echo -e "${YELLOW}Выберите действие:${NC}"
+        echo "1) Включить/выключить ежедневную статистику"
+        echo "2) Изменить время ежедневной статистики"
+        echo "3) Включить/выключить еженедельную статистику"
+        echo "4) Изменить день еженедельной статистики"
+        echo "5) Изменить время еженедельной статистики"
+        echo "0) Вернуться в главное меню"
+        echo ""
+        
+        read -p "➤ Выберите действие: " stats_choice
+        
+        case $stats_choice in
+            1)
+                if [ "$daily_enabled" == "True" ]; then
+                    sed -i "s/^DAILY_STATS_ENABLED=.*/DAILY_STATS_ENABLED=False/" "$env_file" 2>/dev/null || echo "DAILY_STATS_ENABLED=False" >> "$env_file"
+                    print_success "Ежедневная статистика выключена"
+                else
+                    sed -i "s/^DAILY_STATS_ENABLED=.*/DAILY_STATS_ENABLED=True/" "$env_file" 2>/dev/null || echo "DAILY_STATS_ENABLED=True" >> "$env_file"
+                    print_success "Ежедневная статистика включена"
+                fi
+                sleep 2
+                ;;
+            2)
+                echo ""
+                read -p "Введите час отправки (0-23): " new_hour
+                if [[ "$new_hour" =~ ^[0-9]+$ ]] && [ "$new_hour" -ge 0 ] && [ "$new_hour" -le 23 ]; then
+                    read -p "Введите минуты (0-59): " new_minute
+                    if [[ "$new_minute" =~ ^[0-9]+$ ]] && [ "$new_minute" -ge 0 ] && [ "$new_minute" -le 59 ]; then
+                        sed -i "s/^DAILY_STATS_HOUR=.*/DAILY_STATS_HOUR=$new_hour/" "$env_file" 2>/dev/null || echo "DAILY_STATS_HOUR=$new_hour" >> "$env_file"
+                        sed -i "s/^DAILY_STATS_MINUTE=.*/DAILY_STATS_MINUTE=$new_minute/" "$env_file" 2>/dev/null || echo "DAILY_STATS_MINUTE=$new_minute" >> "$env_file"
+                        print_success "Время изменено на ${new_hour}:$(printf "%02d" $new_minute)"
+                    else
+                        print_warning "Неверный формат минут"
+                    fi
+                else
+                    print_warning "Неверный формат часа"
+                fi
+                sleep 2
+                ;;
+            3)
+                if [ "$weekly_enabled" == "True" ]; then
+                    sed -i "s/^WEEKLY_STATS_ENABLED=.*/WEEKLY_STATS_ENABLED=False/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_ENABLED=False" >> "$env_file"
+                    print_success "Еженедельная статистика выключена"
+                else
+                    sed -i "s/^WEEKLY_STATS_ENABLED=.*/WEEKLY_STATS_ENABLED=True/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_ENABLED=True" >> "$env_file"
+                    print_success "Еженедельная статистика включена"
+                fi
+                sleep 2
+                ;;
+            4)
+                echo ""
+                echo "Выберите день недели:"
+                echo "1) Понедельник"
+                echo "2) Вторник"
+                echo "3) Среда"
+                echo "4) Четверг"
+                echo "5) Пятница"
+                echo "6) Суббота"
+                echo "7) Воскресенье"
+                read -p "➤ " day_choice
+                
+                case $day_choice in
+                    1) new_day="mon" ;;
+                    2) new_day="tue" ;;
+                    3) new_day="wed" ;;
+                    4) new_day="thu" ;;
+                    5) new_day="fri" ;;
+                    6) new_day="sat" ;;
+                    7) new_day="sun" ;;
+                    *) print_warning "Неверный выбор"; sleep 2; continue ;;
+                esac
+                
+                sed -i "s/^WEEKLY_STATS_DAY=.*/WEEKLY_STATS_DAY=$new_day/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_DAY=$new_day" >> "$env_file"
+                print_success "День изменен"
+                sleep 2
+                ;;
+            5)
+                echo ""
+                read -p "Введите час отправки (0-23): " new_hour
+                if [[ "$new_hour" =~ ^[0-9]+$ ]] && [ "$new_hour" -ge 0 ] && [ "$new_hour" -le 23 ]; then
+                    read -p "Введите минуты (0-59): " new_minute
+                    if [[ "$new_minute" =~ ^[0-9]+$ ]] && [ "$new_minute" -ge 0 ] && [ "$new_minute" -le 59 ]; then
+                        sed -i "s/^WEEKLY_STATS_HOUR=.*/WEEKLY_STATS_HOUR=$new_hour/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_HOUR=$new_hour" >> "$env_file"
+                        sed -i "s/^WEEKLY_STATS_MINUTE=.*/WEEKLY_STATS_MINUTE=$new_minute/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_MINUTE=$new_minute" >> "$env_file"
+                        print_success "Время изменено на ${new_hour}:$(printf "%02d" $new_minute)"
+                    else
+                        print_warning "Неверный формат минут"
+                    fi
+                else
+                    print_warning "Неверный формат часа"
+                fi
+                sleep 2
+                ;;
+            0)
+                break
+                ;;
+            *)
+                print_warning "Неверный выбор!"
+                sleep 1
+                ;;
+        esac
+    done
 }
 MENU_EOF
 
@@ -1569,13 +1741,17 @@ scheduler = BackgroundScheduler()
 # Хранилище последних статусов серверов для отслеживания изменений
 server_last_status: Dict[str, bool] = {}
 
-# Настройки мониторинга и отчетов
-HEALTH_CHECK_INTERVAL_MINUTES = 5  # Проверка каждые 5 минут
-DAILY_REPORT_HOUR = 9  # Ежедневный отчет в 9:00
-DAILY_REPORT_MINUTE = 0
-WEEKLY_REPORT_DAY = 'mon'  # Еженедельный отчет по понедельникам
-WEEKLY_REPORT_HOUR = 10
-WEEKLY_REPORT_MINUTE = 0
+# Загрузка настроек статистики из .env
+DAILY_STATS_ENABLED = os.getenv('DAILY_STATS_ENABLED', 'True') == 'True'
+DAILY_REPORT_HOUR = int(os.getenv('DAILY_STATS_HOUR', '9'))
+DAILY_REPORT_MINUTE = int(os.getenv('DAILY_STATS_MINUTE', '0'))
+
+WEEKLY_STATS_ENABLED = os.getenv('WEEKLY_STATS_ENABLED', 'True') == 'True'
+WEEKLY_REPORT_DAY = os.getenv('WEEKLY_STATS_DAY', 'mon')
+WEEKLY_REPORT_HOUR = int(os.getenv('WEEKLY_STATS_HOUR', '10'))
+WEEKLY_REPORT_MINUTE = int(os.getenv('WEEKLY_STATS_MINUTE', '0'))
+
+HEALTH_CHECK_INTERVAL_MINUTES = 5
 
 
 def escape_markdown_v1(text: str) -> str:

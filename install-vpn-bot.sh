@@ -844,13 +844,13 @@ menu_statistics() {
         clear
         echo ""
         echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║        Настройки статистики бота          ║${NC}"
+        echo -e "${CYAN}║        Настройки статистики бота           ║${NC}"
         echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
         echo ""
         
         local env_file="/root/vpn-bot/.env"
         
-        # Читаем текущие настройки
+        # ИСПРАВЛЕНО: Сначала читаем переменные из файла
         local daily_enabled=$(grep "^DAILY_STATS_ENABLED=" "$env_file" 2>/dev/null | cut -d'=' -f2)
         local daily_hour=$(grep "^DAILY_STATS_HOUR=" "$env_file" 2>/dev/null | cut -d'=' -f2)
         local daily_minute=$(grep "^DAILY_STATS_MINUTE=" "$env_file" 2>/dev/null | cut -d'=' -f2)
@@ -870,14 +870,22 @@ menu_statistics() {
         weekly_hour=${weekly_hour:-10}
         weekly_minute=${weekly_minute:-0}
         
-        # Отображение текущих настроек
+        # ПОТОМ отображаем
         echo -e "${GREEN}📊 Ежедневная статистика:${NC}"
-        echo "   Статус: $([ "$daily_enabled" == "True" ] && echo "✅ Включена" || echo "❌ Выключена")"
+        if [ "$daily_enabled" == "True" ]; then
+            echo "   Статус: ✅ Включена"
+        else
+            echo "   Статус: ❌ Выключена"
+        fi
         echo "   Время отправки: ${daily_hour}:$(printf "%02d" $daily_minute)"
         echo ""
         
         echo -e "${GREEN}📈 Еженедельная статистика:${NC}"
-        echo "   Статус: $([ "$weekly_enabled" == "True" ] && echo "✅ Включена" || echo "❌ Выключена")"
+        if [ "$weekly_enabled" == "True" ]; then
+            echo "   Статус: ✅ Включена"
+        else
+            echo "   Статус: ❌ Выключена"
+        fi
         
         case $weekly_day in
             mon) day_name="Понедельник" ;;
@@ -909,10 +917,10 @@ menu_statistics() {
             1)
                 if [ "$daily_enabled" == "True" ]; then
                     sed -i "s/^DAILY_STATS_ENABLED=.*/DAILY_STATS_ENABLED=False/" "$env_file" 2>/dev/null || echo "DAILY_STATS_ENABLED=False" >> "$env_file"
-                    print_success "Ежедневная статистика выключена"
+                    echo -e "${GREEN}✅ Ежедневная статистика выключена${NC}"
                 else
                     sed -i "s/^DAILY_STATS_ENABLED=.*/DAILY_STATS_ENABLED=True/" "$env_file" 2>/dev/null || echo "DAILY_STATS_ENABLED=True" >> "$env_file"
-                    print_success "Ежедневная статистика включена"
+                    echo -e "${GREEN}✅ Ежедневная статистика включена${NC}"
                 fi
                 sleep 2
                 ;;
@@ -924,22 +932,22 @@ menu_statistics() {
                     if [[ "$new_minute" =~ ^[0-9]+$ ]] && [ "$new_minute" -ge 0 ] && [ "$new_minute" -le 59 ]; then
                         sed -i "s/^DAILY_STATS_HOUR=.*/DAILY_STATS_HOUR=$new_hour/" "$env_file" 2>/dev/null || echo "DAILY_STATS_HOUR=$new_hour" >> "$env_file"
                         sed -i "s/^DAILY_STATS_MINUTE=.*/DAILY_STATS_MINUTE=$new_minute/" "$env_file" 2>/dev/null || echo "DAILY_STATS_MINUTE=$new_minute" >> "$env_file"
-                        print_success "Время изменено на ${new_hour}:$(printf "%02d" $new_minute)"
+                        echo -e "${GREEN}✅ Время изменено на ${new_hour}:$(printf "%02d" $new_minute)${NC}"
                     else
-                        print_warning "Неверный формат минут"
+                        echo -e "${YELLOW}⚠️  Неверный формат минут${NC}"
                     fi
                 else
-                    print_warning "Неверный формат часа"
+                    echo -e "${YELLOW}⚠️  Неверный формат часа${NC}"
                 fi
                 sleep 2
                 ;;
             3)
                 if [ "$weekly_enabled" == "True" ]; then
                     sed -i "s/^WEEKLY_STATS_ENABLED=.*/WEEKLY_STATS_ENABLED=False/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_ENABLED=False" >> "$env_file"
-                    print_success "Еженедельная статистика выключена"
+                    echo -e "${GREEN}✅ Еженедельная статистика выключена${NC}"
                 else
                     sed -i "s/^WEEKLY_STATS_ENABLED=.*/WEEKLY_STATS_ENABLED=True/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_ENABLED=True" >> "$env_file"
-                    print_success "Еженедельная статистика включена"
+                    echo -e "${GREEN}✅ Еженедельная статистика включена${NC}"
                 fi
                 sleep 2
                 ;;
@@ -963,11 +971,11 @@ menu_statistics() {
                     5) new_day="fri" ;;
                     6) new_day="sat" ;;
                     7) new_day="sun" ;;
-                    *) print_warning "Неверный выбор"; sleep 2; continue ;;
+                    *) echo -e "${YELLOW}⚠️  Неверный выбор${NC}"; sleep 2; continue ;;
                 esac
                 
                 sed -i "s/^WEEKLY_STATS_DAY=.*/WEEKLY_STATS_DAY=$new_day/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_DAY=$new_day" >> "$env_file"
-                print_success "День изменен"
+                echo -e "${GREEN}✅ День изменен${NC}"
                 sleep 2
                 ;;
             5)
@@ -978,12 +986,12 @@ menu_statistics() {
                     if [[ "$new_minute" =~ ^[0-9]+$ ]] && [ "$new_minute" -ge 0 ] && [ "$new_minute" -le 59 ]; then
                         sed -i "s/^WEEKLY_STATS_HOUR=.*/WEEKLY_STATS_HOUR=$new_hour/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_HOUR=$new_hour" >> "$env_file"
                         sed -i "s/^WEEKLY_STATS_MINUTE=.*/WEEKLY_STATS_MINUTE=$new_minute/" "$env_file" 2>/dev/null || echo "WEEKLY_STATS_MINUTE=$new_minute" >> "$env_file"
-                        print_success "Время изменено на ${new_hour}:$(printf "%02d" $new_minute)"
+                        echo -e "${GREEN}✅ Время изменено на ${new_hour}:$(printf "%02d" $new_minute)${NC}"
                     else
-                        print_warning "Неверный формат минут"
+                        echo -e "${YELLOW}⚠️  Неверный формат минут${NC}"
                     fi
                 else
-                    print_warning "Неверный формат часа"
+                    echo -e "${YELLOW}⚠️  Неверный формат часа${NC}"
                 fi
                 sleep 2
                 ;;
@@ -991,7 +999,7 @@ menu_statistics() {
                 break
                 ;;
             *)
-                print_warning "Неверный выбор!"
+                echo -e "${RED}❌ Неверный выбор!${NC}"
                 sleep 1
                 ;;
         esac

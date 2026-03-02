@@ -2904,28 +2904,34 @@ def start_scheduler():
         print(f"✅ Задача 'Проверка серверов' запланирована (каждые {HEALTH_CHECK_INTERVAL_MINUTES} минут)")
         
         # Ежедневный отчет
-        scheduler.add_job(
-            send_daily_report,
-            trigger=CronTrigger(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE),
-            id='daily_report',
-            name='Ежедневный отчет',
-            replace_existing=True
-        )
-        print(f"✅ Задача 'Ежедневный отчет' запланирована ({DAILY_REPORT_HOUR:02d}:{DAILY_REPORT_MINUTE:02d})")
+        if DAILY_STATS_ENABLED:
+            scheduler.add_job(
+                send_daily_report,
+                trigger=CronTrigger(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE),
+                id='daily_report',
+                name='Ежедневный отчет',
+                replace_existing=True
+            )
+            print(f"✅ Задача 'Ежедневный отчет' запланирована ({DAILY_REPORT_HOUR:02d}:{DAILY_REPORT_MINUTE:02d})")
+        else:
+            print("ℹ️ Ежедневная статистика отключена в настройках — задача не запланирована")
         
         # Еженедельный отчет
-        scheduler.add_job(
-            send_weekly_report,
-            trigger=CronTrigger(
-                day_of_week=WEEKLY_REPORT_DAY,
-                hour=WEEKLY_REPORT_HOUR,
-                minute=WEEKLY_REPORT_MINUTE
-            ),
-            id='weekly_report',
-            name='Еженедельный отчет',
-            replace_existing=True
-        )
-        print(f"✅ Задача 'Еженедельный отчет' запланирована ({WEEKLY_REPORT_DAY} {WEEKLY_REPORT_HOUR:02d}:{WEEKLY_REPORT_MINUTE:02d})")
+        if WEEKLY_STATS_ENABLED:
+            scheduler.add_job(
+                send_weekly_report,
+                trigger=CronTrigger(
+                    day_of_week=WEEKLY_REPORT_DAY,
+                    hour=WEEKLY_REPORT_HOUR,
+                    minute=WEEKLY_REPORT_MINUTE
+                ),
+                id='weekly_report',
+                name='Еженедельный отчет',
+                replace_existing=True
+            )
+            print(f"✅ Задача 'Еженедельный отчет' запланирована ({WEEKLY_REPORT_DAY} {WEEKLY_REPORT_HOUR:02d}:{WEEKLY_REPORT_MINUTE:02d})")
+        else:
+            print("ℹ️ Еженедельная статистика отключена в настройках — задача не запланирована")
         
         # Запускаем планировщик
         scheduler.start()

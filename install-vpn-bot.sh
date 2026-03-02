@@ -1946,6 +1946,16 @@ class VPNManager:
             print(f"❌ Ошибка получения inbound'ов: {e}")
         return []
     
+    def _extract_inbound_clients_from_settings(self, inbound: Dict) -> List[Dict]:
+        """Извлекает клиентов из settings inbound (включая mixed)."""
+        settings_raw = inbound.get('settings', '{}')
+        try:
+            settings_obj = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+        except Exception:
+            settings_obj = {}
+        clients = settings_obj.get('clients', []) if isinstance(settings_obj, dict) else []
+        return clients if isinstance(clients, list) else []
+
     def get_users_list(self) -> List[Dict]:
         """Агрегированный список пользователей по всем inbound'ам"""
         if not self.is_authenticated:
@@ -1963,6 +1973,8 @@ class VPNManager:
             inbounds = result.get('obj', [])
             users_data = []
             for inbound in inbounds:
+                protocol = str(inbound.get('protocol', '')).lower().strip()
+
                 if 'clientStats' in inbound and inbound['clientStats']:
                     for client in inbound['clientStats']:
                         total_gb = client.get('total', 0) / (1024**3) if client.get('total', 0) > 0 else 'Безлимит'
@@ -1970,12 +1982,37 @@ class VPNManager:
                         expiry_time = 'Безлимит'
                         if client.get('expiryTime', 0) > 0:
                             expiry_time = datetime.fromtimestamp(client.get('expiryTime') / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                        if protocol == 'mixed':
+                            display_name = client.get('username') or client.get('email') or 'N/A'
+                        else:
+                            display_name = client.get('email') or client.get('username') or 'N/A'
                         users_data.append({
-                            'email': client.get('email', 'N/A'),
+                            'email': display_name,
+                            'username': client.get('username', ''),
                             'enable': client.get('enable', False),
                             'total_gb': total_gb,
                             'used_gb': used_gb,
                             'expiry_time': expiry_time,
+                            'inbound_id': inbound.get('id'),
+                            'inbound_port': inbound.get('port'),
+                            'protocol': inbound.get('protocol'),
+                            'client_id': client.get('id'),
+                            'settings': inbound.get('settings', '{}'),
+                            'stream_settings': inbound.get('streamSettings', '{}')
+                        })
+
+                # Для mixed и некоторых конфигураций clientStats может быть пустым,
+                # поэтому читаем клиентов напрямую из settings
+                elif protocol == 'mixed':
+                    for client in self._extract_inbound_clients_from_settings(inbound):
+                        display_name = client.get('username') or client.get('email') or 'N/A'
+                        users_data.append({
+                            'email': display_name,
+                            'username': client.get('username', ''),
+                            'enable': client.get('enable', True),
+                            'total_gb': 'Безлимит',
+                            'used_gb': 0,
+                            'expiry_time': 'Безлимит',
                             'inbound_id': inbound.get('id'),
                             'inbound_port': inbound.get('port'),
                             'protocol': inbound.get('protocol'),
@@ -2005,7 +2042,62 @@ class VPNManager:
             print(f"❌ Ошибка получения детальных настроек: {e}")
             return None
     
-    def create_user(self, username: str, inbound_id: int = 1, total_gb: int = 0, expiry_days: int = 0) -> bool:
+    def update_inbound_clients(self, inbound_id: int, clients: List[Dict]) -> bool:
+        """Полное обновление списка clients у inbound."""
+        inbound_obj = self.get_detailed_inbound_settings(inbound_id)
+        if not inbound_obj:
+            print(f"❌ Не удалось получить inbound {inbound_id} для обновления")
+            return False
+
+        settings_raw = inbound_obj.get('settings', '{}')
+        try:
+            settings_obj = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+        except Exception:
+            settings_obj = {}
+        if not isinstance(settings_obj, dict):
+            settings_obj = {}
+        settings_obj['clients'] = clients
+
+        payload = {
+            'id': inbound_id,
+            'up': inbound_obj.get('up', 0),
+            'down': inbound_obj.get('down', 0),
+            'total': inbound_obj.get('total', 0),
+            'remark': inbound_obj.get('remark', ''),
+            'enable': inbound_obj.get('enable', True),
+            'expiryTime': inbound_obj.get('expiryTime', 0),
+            'listen': inbound_obj.get('listen', ''),
+            'port': inbound_obj.get('port', 0),
+            'protocol': inbound_obj.get('protocol', ''),
+            'settings': json.dumps(settings_obj, separators=(',', ':')),
+            'streamSettings': inbound_obj.get('streamSettings', '{}'),
+            'sniffing': inbound_obj.get('sniffing', '{}')
+        }
+
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+        endpoints = [
+            f"{self.base_url}/panel/api/inbounds/update/{inbound_id}",
+            f"{self.base_url}/xui/API/inbounds/update/{inbound_id}"
+        ]
+
+        for api_url in endpoints:
+            try:
+                response = self.session.post(api_url, json=payload, headers=headers, timeout=15)
+                if response.status_code != 200:
+                    continue
+                result = response.json()
+                if result.get('success'):
+                    return True
+            except Exception as e:
+                print(f"❌ Ошибка обновления clients через {api_url}: {e}")
+                continue
+        return False
+
+    def create_user(self, username: str, inbound_id: int = 1, total_gb: int = 0, expiry_days: int = 0, mixed_username: str = "", mixed_password: str = "") -> bool:
         """Создание пользователя в указанном inbound"""
         print(f"🚀 Создание пользователя {username} в inbound {inbound_id}")
         print(f"   Параметры: total_gb={total_gb}, expiry_days={expiry_days}")
@@ -2027,9 +2119,11 @@ class VPNManager:
             print("❌ Нет доступных inbound'ов!")
             return False
         
-        if not any(ib.get('id') == inbound_id for ib in inbounds):
+        selected_inbound = next((ib for ib in inbounds if ib.get('id') == inbound_id), None)
+        if not selected_inbound:
             print(f"❌ Inbound с ID {inbound_id} не найден!")
             return False
+        protocol = str(selected_inbound.get('protocol', '')).lower().strip()
         
         try:
             client_uuid = str(uuid.uuid4())
@@ -2040,6 +2134,33 @@ class VPNManager:
             print(f"   Total bytes: {total_bytes}")
             print(f"   Expiry timestamp: {expiry_timestamp}")
             
+            if protocol == 'mixed':
+                if not mixed_username or not mixed_password:
+                    print("❌ Для inbound mixed необходимо указать username и password")
+                    return False
+
+                detailed_settings = self.get_detailed_inbound_settings(inbound_id)
+                if not detailed_settings:
+                    print(f"❌ Не удалось получить settings inbound {inbound_id}")
+                    return False
+
+                clients = self._extract_inbound_clients_from_settings(detailed_settings)
+                exists = any(
+                    str(c.get('username', '')).lower().strip() == mixed_username.lower().strip()
+                    for c in clients
+                )
+                if exists:
+                    print(f"❌ Пользователь mixed {mixed_username} уже существует")
+                    return False
+
+                clients.append({
+                    'username': mixed_username,
+                    'password': mixed_password,
+                    'email': username,
+                    'enable': True
+                })
+                return self.update_inbound_clients(inbound_id, clients)
+
             client_data = {
                 "id": client_uuid,
                 "email": username,
@@ -2151,8 +2272,22 @@ class VPNManager:
             if not detailed_settings:
                 print(f"❌ Не удалось получить настройки inbound {inbound_id}")
                 return False
+            protocol = str(detailed_settings.get('protocol', '')).lower().strip()
             settings_str = detailed_settings.get('settings', '{}')
             settings = json.loads(settings_str) if isinstance(settings_str, str) else settings_str
+
+            if protocol == 'mixed':
+                clients = settings.get('clients', []) if isinstance(settings, dict) else []
+                filtered_clients = [
+                    c for c in clients
+                    if str(c.get('username', '')).lower().strip() != username.lower().strip()
+                    and str(c.get('email', '')).lower().strip() != username.lower().strip()
+                ]
+                if len(filtered_clients) == len(clients):
+                    print(f"❌ Пользователь {username} не найден в mixed inbound {inbound_id}")
+                    return False
+                return self.update_inbound_clients(inbound_id, filtered_clients)
+
             client_uuid = None
             for client in settings.get('clients', []):
                 if str(client.get('email', '')).lower().strip() == username.lower().strip():
@@ -2534,19 +2669,20 @@ def create_servers_keyboard() -> types.InlineKeyboardMarkup:
         )
     return markup
 
-def create_users_keyboard(users: List[Dict], page: int = 0, per_page: int = 10) -> types.InlineKeyboardMarkup:
+def create_users_keyboard(users: List[Dict], page: int = 0, per_page: int = 10, inbound_id: Optional[int] = None) -> types.InlineKeyboardMarkup:
     """Клавиатура со списком пользователей (пагинация)"""
     start_idx = page * per_page
     end_idx = min(len(users), start_idx + per_page)
     users_page = users[start_idx:end_idx]
     markup = types.InlineKeyboardMarkup(row_width=2)
     buttons = []
+    inbound_suffix = f"|{inbound_id}" if inbound_id is not None else ""
     for user in users_page:
         status_icon = "✅" if user['enable'] else "🚫"
         buttons.append(
             types.InlineKeyboardButton(
                 f"{status_icon} {user['email']}",
-                callback_data=f"user_details|{safe_encode_username(user['email'])}"
+                callback_data=f"user_details|{safe_encode_username(user['email'])}{inbound_suffix}"
             )
         )
     for i in range(0, len(buttons), 2):
@@ -2557,11 +2693,11 @@ def create_users_keyboard(users: List[Dict], page: int = 0, per_page: int = 10) 
     nav_buttons = []
     total_pages = (len(users) + per_page - 1) // per_page
     if page > 0:
-        nav_buttons.append(types.InlineKeyboardButton("◀️ Назад", callback_data=f"users_page_{page-1}"))
+        nav_buttons.append(types.InlineKeyboardButton("◀️ Назад", callback_data=f"users_page|{page-1}{inbound_suffix}"))
     if total_pages > 1:
         nav_buttons.append(types.InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data="noop"))
     if page < total_pages - 1:
-        nav_buttons.append(types.InlineKeyboardButton("Вперед ▶️", callback_data=f"users_page_{page+1}"))
+        nav_buttons.append(types.InlineKeyboardButton("Вперед ▶️", callback_data=f"users_page|{page+1}{inbound_suffix}"))
     if nav_buttons:
         markup.row(*nav_buttons)
     return markup
@@ -2947,14 +3083,24 @@ def shutdown_scheduler():
     except Exception as e:
         print(f"❌ Ошибка остановки планировщика: {e}")
 
-def show_user_details(chat_id, username, user_id):
+def show_user_details(chat_id, username, user_id, inbound_id: Optional[int] = None):
     """Детали пользователя + кнопки действий с месячным трафиком"""
     vpn_manager = get_vpn_manager(user_id)
-    user_stats = vpn_manager.get_user_stats(username)
+
+    user_stats = None
+    if inbound_id is not None:
+        users = vpn_manager.get_users_list()
+        user_stats = next((u for u in users if u.get('inbound_id') == inbound_id and u['email'].lower().strip() == username.lower().strip()), None)
+    if not user_stats:
+        user_stats = vpn_manager.get_user_stats(username)
+
     if not user_stats:
         bot.send_message(chat_id, f"❌ Пользователь {username} не найден")
         return
-    
+
+    selected_inbound_id = inbound_id if inbound_id is not None else user_stats.get('inbound_id')
+    set_user_context(user_id, 'users_list_inbound_id', str(selected_inbound_id))
+
     status = "✅ Активен" if user_stats['enable'] else "🚫 Заблокирован"
     if isinstance(user_stats['total_gb'], str):
         limit_text = user_stats['total_gb']
@@ -2962,25 +3108,23 @@ def show_user_details(chat_id, username, user_id):
     else:
         limit_text = f"{user_stats['total_gb']:.2f} GB"
         usage_percent = f"{(user_stats['used_gb'] / user_stats['total_gb']) * 100:.1f}%" if user_stats['total_gb'] > 0 else "N/A"
-    
+
     used_text = f"{user_stats['used_gb']:.2f} GB"
-    
+
     markup = types.InlineKeyboardMarkup()
-    # Всегда используем safe_encode_username для callback_data
     username_encoded = safe_encode_username(username)
+    inbound_suffix = f"|{selected_inbound_id}" if selected_inbound_id is not None else ""
     markup.row(
         types.InlineKeyboardButton("📄 VLESS", callback_data=f"download_vless|{username_encoded}"),
         types.InlineKeyboardButton("🎯 QR-код", callback_data=f"download_qr|{username_encoded}")
     )
     markup.add(types.InlineKeyboardButton("🗑️ Удалить", callback_data=f"delete_user_confirm|{username_encoded}"))
-    markup.add(types.InlineKeyboardButton("⬅️ К списку пользователей", callback_data="users_page_0"))
-    
+    markup.add(types.InlineKeyboardButton("⬅️ К списку пользователей", callback_data=f"users_page|0{inbound_suffix}"))
+
     current_server = get_current_server_config(user_id)
-    
-    # ИСПРАВЛЕНИЕ: Экранируем все динамические тексты
     safe_username = safe_markdown_text(username)
     safe_server_name = safe_markdown_text(current_server['name'])
-    
+
     response = f"📊 **Пользователь {safe_username}**\n\n"
     response += f"🌐 Сервер: {safe_server_name}\n"
     response += f"📊 Статус: {status}\n"
@@ -2993,7 +3137,7 @@ def show_user_details(chat_id, username, user_id):
     response += f"🌐 Протокол: {user_stats['protocol']}\n"
     response += f"🔌 Порт: {user_stats['inbound_port']}\n"
     response += f"🆔 Inbound ID: {user_stats['inbound_id']}\n"
-    
+
     bot.send_message(chat_id, response, reply_markup=markup, parse_mode='Markdown')
 
 # ===== Inbound helpers =====
@@ -3668,67 +3812,24 @@ def handle_menu_restart(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_users_list")
 def handle_menu_users_list(call):
-    print(f"🔍 DEBUG: handle_menu_users_list вызван пользователем {call.from_user.id}")
-    print(f"🔍 DEBUG: callback_data = {call.data}")
-    
     if not is_admin(call.from_user.id):
-        print(f"❌ DEBUG: Пользователь {call.from_user.id} не админ")
         bot.answer_callback_query(call.id, "❌ Нет доступа")
         return
-    
-    bot.answer_callback_query(call.id, "⏳ Загружаю список...")
-    print("✅ DEBUG: answer_callback_query отправлен")
-    
+
+    bot.answer_callback_query(call.id, "📥 Выбор inbound...")
+    current_server = get_current_server_config(call.from_user.id)
+    inbounds = get_inbounds_for_server(call.from_user.id)
+    if not inbounds:
+        bot.send_message(call.message.chat.id, f"❌ На сервере {current_server['name']} нет inbound'ов.")
+        return
+
+    kb = build_inbounds_keyboard_safe(inbounds, action="inbound_for_users_list", user_id=call.from_user.id)
+    text = f"👥 Список пользователей VPN\n🌐 Сервер: {current_server['name']}\n\n📥 Выберите inbound:"
     try:
-        current_server = get_current_server_config(call.from_user.id)
-        print(f"🔍 DEBUG: Текущий сервер: {current_server['name']}")
-        
-        vpn_manager = get_vpn_manager(call.from_user.id)
-        print("🔍 DEBUG: VPN Manager получен")
-        
-        users = vpn_manager.get_users_list()
-        print(f"🔍 DEBUG: Получено пользователей: {len(users) if users else 0}")
-        
-        if not users:
-            error_msg = f"❌ Не удалось получить список пользователей с сервера {current_server['name']} или список пуст."
-            print(f"❌ DEBUG: {error_msg}")
-            try:
-                bot.edit_message_text(text=error_msg, chat_id=call.message.chat.id, message_id=call.message.message_id)
-            except Exception as e:
-                print(f"❌ DEBUG: Ошибка edit_message_text: {e}")
-                bot.send_message(call.message.chat.id, error_msg)
-            return
-        
-        users.sort(key=lambda x: x['email'].lower())
-        print(f"🔍 DEBUG: Пользователи отсортированы")
-        
-        markup = create_users_keyboard(users, page=0, per_page=10)
-        print("🔍 DEBUG: Клавиатура создана")
-        
-        message_text = f"👥 Список пользователей VPN:\n🌐 Сервер: {current_server['name']}\n\n💡 Нажмите на имя пользователя для просмотра деталей"
-        
-        try:
-            bot.edit_message_text(
-                text=message_text, 
-                chat_id=call.message.chat.id, 
-                message_id=call.message.message_id, 
-                reply_markup=markup
-            )
-            print("✅ DEBUG: Сообщение обновлено через edit_message_text")
-        except Exception as e:
-            print(f"❌ DEBUG: Ошибка edit_message_text: {e}")
-            bot.send_message(call.message.chat.id, message_text, reply_markup=markup)
-            print("✅ DEBUG: Сообщение отправлено через send_message")
-            
-    except Exception as e:
-        error_msg = f"❌ Критическая ошибка в handle_menu_users_list: {str(e)}"
-        print(error_msg)
-        import traceback
-        print(f"🔍 DEBUG: Трассировка: {traceback.format_exc()}")
-        try:
-            bot.edit_message_text(text=error_msg, chat_id=call.message.chat.id, message_id=call.message.message_id)
-        except:
-            bot.send_message(call.message.chat.id, error_msg)
+        bot.edit_message_text(text=text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=kb)
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=kb)
+
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_users_search")
 def handle_menu_users_search(call):
@@ -3750,13 +3851,22 @@ def handle_menu_users_create(call):
         bot.answer_callback_query(call.id, "❌ Нет доступа")
         return
     bot.answer_callback_query(call.id, "➕ Создание пользователя...")
+
+    inbounds = get_inbounds_for_server(call.from_user.id)
+    if not inbounds:
+        bot.send_message(call.message.chat.id, "❌ На сервере нет inbound'ов.")
+        return
+
     current_server = get_current_server_config(call.from_user.id)
+    response = f"➕ Создание пользователя на сервере {current_server['name']}\n\n"
+    response += "📥 Сначала выберите inbound:"
+    kb = build_inbounds_keyboard_safe(inbounds, action="inbound_for_create", user_id=call.from_user.id)
+
     try:
-        bot.edit_message_text(text=f"➕ Создание пользователя на сервере {current_server['name']}\n\nВведите имя нового пользователя:", chat_id=call.message.chat.id, message_id=call.message.message_id)
-    except:
-        bot.send_message(call.message.chat.id, f"➕ Создание пользователя на сервере {current_server['name']}\n\nВведите имя нового пользователя:")
-    # Регистрируем следующий шаг
-    bot.register_next_step_handler_by_chat_id(call.message.chat.id, create_user_step1)
+        bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=kb)
+    except Exception:
+        bot.send_message(call.message.chat.id, response, reply_markup=kb)
+
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_users_delete")
 def handle_menu_users_delete(call):
@@ -3769,30 +3879,35 @@ def handle_menu_users_delete(call):
         bot.edit_message_text(text=f"🗑️ Удаление пользователя с сервера {current_server['name']}\n\nВведите имя пользователя для удаления:", chat_id=call.message.chat.id, message_id=call.message.message_id)
     except:
         bot.send_message(call.message.chat.id, f"🗑️ Удаление пользователя с сервера {current_server['name']}\n\nВведите имя пользователя для удаления:")
-    # Регистрируем следующий шаг
     bot.register_next_step_handler_by_chat_id(call.message.chat.id, delete_user_step1)
 
 # ===== ПОЛЬЗОВАТЕЛЬСКИЕ ФУНКЦИИ (step handlers) =====
 
-def create_user_step1(message):
+def create_user_step1(message, user_id: int, inbound_id: int):
     if not is_admin(message.from_user.id):
         return
     username = message.text.strip()
     if not username:
-        bot.reply_to(message, "❌ Имя пользователя не может быть пустым. Попробуйте снова.")
+        msg = bot.reply_to(message, "❌ Имя пользователя не может быть пустым. Введите снова:")
+        bot.register_next_step_handler(msg, create_user_step1, user_id, inbound_id)
         return
     if len(username) < 3:
-        bot.reply_to(message, "❌ Имя пользователя слишком короткое (минимум 3 символа). Попробуйте снова.")
+        msg = bot.reply_to(message, "❌ Имя пользователя слишком короткое (минимум 3 символа). Введите снова:")
+        bot.register_next_step_handler(msg, create_user_step1, user_id, inbound_id)
         return
     if any(char in username for char in [' ', '\n', '\t', '\r']):
-        bot.reply_to(message, "❌ Имя пользователя не может содержать пробелы или переносы строк. Попробуйте снова.")
+        msg = bot.reply_to(message, "❌ Имя пользователя не может содержать пробелы или переносы строк. Введите снова:")
+        bot.register_next_step_handler(msg, create_user_step1, user_id, inbound_id)
         return
-    msg = bot.reply_to(message, 
-                      f"👤 Имя: {username}\n\n"
-                      "💾 Введите лимит трафика в GB (0 = безлимит):")
-    bot.register_next_step_handler(msg, create_user_step2, username)
 
-def create_user_step2(message, username):
+    user_data = {'username': username, 'inbound_id': inbound_id}
+    set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+    msg = bot.reply_to(message, f"👤 Имя: {username}\n\n💾 Введите лимит трафика в GB (0 = безлимит):")
+    bot.register_next_step_handler(msg, create_user_step2, user_id, inbound_id)
+
+
+def create_user_step2(message, user_id: int, inbound_id: int):
     if not is_admin(message.from_user.id):
         return
     try:
@@ -3800,15 +3915,23 @@ def create_user_step2(message, username):
         if total_gb < 0:
             raise ValueError
     except ValueError:
-        bot.reply_to(message, "❌ Некорректное значение. Введите число больше или равное 0.")
+        msg = bot.reply_to(message, "❌ Некорректное значение. Введите число больше или равное 0.")
+        bot.register_next_step_handler(msg, create_user_step2, user_id, inbound_id)
         return
-    msg = bot.reply_to(message, 
-                      f"👤 Имя: {username}\n"
-                      f"💾 Лимит: {total_gb} GB\n\n"
-                      "⏰ Введите срок действия в днях (0 = бессрочно):")
-    bot.register_next_step_handler(msg, create_user_step3, username, total_gb)
 
-def create_user_step3(message, username, total_gb):
+    user_data_json = get_user_context(user_id, 'create_user_data')
+    if not user_data_json:
+        bot.reply_to(message, "❌ Данные пользователя утеряны. Начните создание заново.")
+        return
+    user_data = json.loads(user_data_json)
+    user_data['total_gb'] = total_gb
+    set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+    msg = bot.reply_to(message, f"💾 Лимит: {total_gb} GB\n\n⏰ Введите срок действия в днях (0 = бессрочно):")
+    bot.register_next_step_handler(msg, create_user_step3, user_id, inbound_id)
+
+
+def create_user_step3(message, user_id: int, inbound_id: int):
     if not is_admin(message.from_user.id):
         return
     try:
@@ -3816,44 +3939,121 @@ def create_user_step3(message, username, total_gb):
         if expiry_days < 0:
             raise ValueError
     except ValueError:
-        bot.reply_to(message, "❌ Некорректное значение. Введите число больше или равное 0.")
-        # Возвращаем функцию для повторного ввода
-        msg = bot.reply_to(message, "⏰ Введите срок действия в днях (0 = бессрочно):")
-        bot.register_next_step_handler(msg, create_user_step3, username, total_gb)
+        msg = bot.reply_to(message, "❌ Некорректное значение. Введите число больше или равное 0.")
+        bot.register_next_step_handler(msg, create_user_step3, user_id, inbound_id)
         return
-    
-    current_server = get_current_server_config(message.from_user.id)
-    expiry_text = f"{expiry_days} дней" if expiry_days > 0 else "Бессрочно"
-    limit_text = f"{total_gb} GB" if total_gb > 0 else "Безлимит"
-    
-    # ИСПРАВЛЕНИЕ: Экранируем имя пользователя для безопасного отображения
-    safe_username = safe_markdown_text(username)
-    safe_server_name = safe_markdown_text(current_server['name'])
-    
-    response = f"📝 **Создание нового пользователя:**\n\n"
-    response += f"🌐 Сервер: {safe_server_name}\n"
-    response += f"👤 Имя: {safe_username}\n"
-    response += f"💾 Лимит трафика: {limit_text}\n"
-    response += f"⏰ Срок действия: {expiry_text}\n"
-    response += f"🔄 Flow: xtls-rprx-vision\n\n"
-    response += "📥 Выберите inbound для создания пользователя:"
-    
-    # Сохраняем данные в контексте пользователя
+
+    user_data_json = get_user_context(user_id, 'create_user_data')
+    if not user_data_json:
+        bot.reply_to(message, "❌ Данные пользователя утеряны. Начните создание заново.")
+        return
+    user_data = json.loads(user_data_json)
+    user_data['expiry_days'] = expiry_days
+    set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+    complete_user_creation(user_id, message.chat.id, inbound_id)
+
+
+def create_user_mixed_username_step(message, user_id: int, inbound_id: int):
+    if not is_admin(message.from_user.id):
+        return
+    mixed_username = message.text.strip()
+    if not mixed_username:
+        msg = bot.reply_to(message, "❌ Имя пользователя mixed не может быть пустым. Введите снова:")
+        bot.register_next_step_handler(msg, create_user_mixed_username_step, user_id, inbound_id)
+        return
+
     user_data = {
-        'username': username,
-        'total_gb': total_gb, 
-        'expiry_days': expiry_days
+        'username': mixed_username,
+        'total_gb': 0,
+        'expiry_days': 0,
+        'mixed_username': mixed_username,
+        'inbound_id': inbound_id
     }
-    set_user_context(message.from_user.id, 'create_user_data', json.dumps(user_data))
-    
-    inbounds = get_inbounds_for_server(message.from_user.id)
-    if not inbounds:
-        bot.reply_to(message, "❌ На сервере нет inbound'ов.")
+    set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+    msg = bot.reply_to(message, "🔐 Введите пароль для mixed пользователя:")
+    bot.register_next_step_handler(msg, create_user_mixed_password_step, user_id, inbound_id)
+
+
+def create_user_mixed_password_step(message, user_id: int, inbound_id: int):
+    if not is_admin(message.from_user.id):
         return
-    
-    # Используем новую безопасную функцию
-    kb = build_inbounds_keyboard_safe(inbounds, action="inbound_for_create", user_id=message.from_user.id)
-    bot.reply_to(message, response, parse_mode='Markdown', reply_markup=kb)
+    mixed_password = message.text.strip()
+    if not mixed_password:
+        msg = bot.reply_to(message, "❌ Пароль не может быть пустым. Введите снова:")
+        bot.register_next_step_handler(msg, create_user_mixed_password_step, user_id, inbound_id)
+        return
+
+    user_data_json = get_user_context(user_id, 'create_user_data')
+    if not user_data_json:
+        bot.reply_to(message, "❌ Данные пользователя утеряны. Начните создание заново.")
+        return
+
+    user_data = json.loads(user_data_json)
+    user_data['mixed_password'] = mixed_password
+    set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+    complete_user_creation(user_id, message.chat.id, inbound_id)
+
+
+def complete_user_creation(user_id: int, chat_id: int, inbound_id: int, message_id: Optional[int] = None):
+    user_data_json = get_user_context(user_id, 'create_user_data')
+    if not user_data_json:
+        bot.send_message(chat_id, "❌ Данные пользователя утеряны. Начните создание заново.")
+        return
+
+    try:
+        user_data = json.loads(user_data_json)
+        username = user_data.get('username', '')
+        total_gb = int(user_data.get('total_gb', 0))
+        expiry_days = int(user_data.get('expiry_days', 0))
+        mixed_username = user_data.get('mixed_username', '')
+        mixed_password = user_data.get('mixed_password', '')
+    except Exception as e:
+        print(f"❌ Ошибка парсинга данных пользователя: {e}")
+        bot.send_message(chat_id, "❌ Ошибка данных пользователя. Начните создание заново.")
+        return
+
+    inbounds = get_inbounds_for_server(user_id)
+    selected_inbound = next((ib for ib in inbounds if ib.get('id') == inbound_id), None)
+    protocol = str(selected_inbound.get('protocol', '')).lower().strip() if selected_inbound else ''
+
+    current_server = get_current_server_config(user_id)
+    vm = get_vpn_manager(user_id)
+
+    success = vm.create_user(username, inbound_id=inbound_id, total_gb=total_gb, expiry_days=expiry_days, mixed_username=mixed_username, mixed_password=mixed_password)
+
+    if success:
+        response = f"✅ Пользователь успешно создан!\n\n"
+        response += f"🌐 Сервер: {current_server['name']}\n"
+        response += f"📥 Inbound ID: {inbound_id}\n"
+        if protocol == 'mixed':
+            response += f"🧩 Mixed username: {mixed_username}\n"
+        else:
+            response += f"👤 Имя: {username}\n"
+            response += f"💾 Лимит: {total_gb} GB\n" if total_gb > 0 else "💾 Лимит: Безлимит\n"
+            response += f"⏰ Срок: {expiry_days} дней\n" if expiry_days > 0 else "⏰ Срок: Бессрочно\n"
+
+        clear_user_context(user_id, 'create_user_data')
+
+        if message_id is not None:
+            try:
+                bot.edit_message_text(text=response, chat_id=chat_id, message_id=message_id)
+                return
+            except Exception:
+                pass
+        bot.send_message(chat_id, response)
+    else:
+        error_msg = f"❌ Ошибка создания пользователя {username or mixed_username} в inbound {inbound_id} на сервере {current_server['name']}"
+        if message_id is not None:
+            try:
+                bot.edit_message_text(text=error_msg, chat_id=chat_id, message_id=message_id)
+                return
+            except Exception:
+                pass
+        bot.send_message(chat_id, error_msg)
+
 
 def delete_user_step1(message):
     if not is_admin(message.from_user.id):
@@ -3956,28 +4156,75 @@ def handle_server_selection(call):
     response += "Теперь все операции будут выполняться на этом сервере."
     bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('users_page_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_inbound|inbound_for_users_list'))
+def handle_inbound_for_users_list(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    try:
+        parts = call.data.split('|')
+        inbound_id = int(parts[-1])
+    except Exception:
+        bot.answer_callback_query(call.id, "❌ Ошибка данных inbound")
+        return
+
+    vpn_manager = get_vpn_manager(call.from_user.id)
+    users = [u for u in vpn_manager.get_users_list() if u.get('inbound_id') == inbound_id]
+    if not users:
+        bot.answer_callback_query(call.id, "⚠️ В этом inbound пользователей пока нет")
+        return
+
+    users.sort(key=lambda x: x['email'].lower())
+    current_server = get_current_server_config(call.from_user.id)
+    markup = create_users_keyboard(users, page=0, per_page=10, inbound_id=inbound_id)
+    text = f"👥 Список пользователей VPN:\n🌐 Сервер: {current_server['name']}\n📥 Inbound ID: {inbound_id}\n\n💡 Нажмите на имя пользователя для просмотра деталей"
+
+    set_user_context(call.from_user.id, 'users_list_inbound_id', str(inbound_id))
+
+    try:
+        bot.edit_message_text(text=text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+    except Exception:
+        bot.send_message(call.message.chat.id, text, reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('users_page|'))
 def handle_users_pagination(call):
     if not is_admin(call.from_user.id):
         bot.answer_callback_query(call.id, "❌ Нет доступа")
         return
-    page = int(call.data.replace('users_page_', ''))
-    vpn_manager = get_vpn_manager(call.from_user.id)
-    users = vpn_manager.get_users_list()
-    if not users:
-        bot.answer_callback_query(call.id, "❌ Ошибка получения данных")
+
+    try:
+        parts = call.data.split('|')
+        page = int(parts[1])
+        inbound_id = int(parts[2]) if len(parts) > 2 else int(get_user_context(call.from_user.id, 'users_list_inbound_id', '0'))
+    except Exception:
+        bot.answer_callback_query(call.id, "❌ Ошибка данных пагинации")
         return
+
+    if inbound_id <= 0:
+        bot.answer_callback_query(call.id, "❌ Не выбран inbound")
+        return
+
+    vpn_manager = get_vpn_manager(call.from_user.id)
+    users = [u for u in vpn_manager.get_users_list() if u.get('inbound_id') == inbound_id]
+    if not users:
+        bot.answer_callback_query(call.id, "❌ Пользователи не найдены")
+        return
+
     users.sort(key=lambda x: x['email'].lower())
     current_server = get_current_server_config(call.from_user.id)
-    markup = create_users_keyboard(users, page=page, per_page=10)
+    markup = create_users_keyboard(users, page=page, per_page=10, inbound_id=inbound_id)
+    text = f"👥 Список пользователей VPN:\n🌐 Сервер: {current_server['name']}\n📥 Inbound ID: {inbound_id}\n\n💡 Нажмите на имя пользователя для просмотра деталей"
     try:
-        bot.edit_message_text(text=f"👥 Список пользователей VPN:\n🌐 Сервер: {current_server['name']}\n\n💡 Нажмите на имя пользователя для просмотра деталей",
-                              chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+        bot.edit_message_text(text=text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
         bot.answer_callback_query(call.id)
     except Exception:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, f"👥 Список пользователей VPN:\n🌐 Сервер: {current_server['name']}\n\n💡 Нажмите на имя пользователя для просмотра деталей", reply_markup=markup)
+        bot.send_message(call.message.chat.id, text, reply_markup=markup)
         bot.answer_callback_query(call.id)
+
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('user_details|'))
 def handle_user_details(call):
@@ -3985,7 +4232,9 @@ def handle_user_details(call):
         bot.answer_callback_query(call.id, "❌ Нет доступа")
         return
     try:
-        username_encoded = call.data.split('|', 1)[1]
+        parts = call.data.split('|')
+        username_encoded = parts[1]
+        inbound_id = int(parts[2]) if len(parts) > 2 else None
         username = safe_decode_username(username_encoded)
         if not username:
             bot.answer_callback_query(call.id, "❌ Ошибка декодирования имени")
@@ -3994,8 +4243,12 @@ def handle_user_details(call):
         print(f"❌ Ошибка парсинга callback: {e}")
         bot.answer_callback_query(call.id, "❌ Ошибка декодирования имени")
         return
+
+    if inbound_id is not None:
+        set_user_context(call.from_user.id, 'users_list_inbound_id', str(inbound_id))
+
     bot.answer_callback_query(call.id, f"📊 Загружаю данные {username.replace('_', ' ')}")
-    show_user_details(call.message.chat.id, username, call.from_user.id)
+    show_user_details(call.message.chat.id, username, call.from_user.id, inbound_id=inbound_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_user_confirm|'))
 def handle_delete_user_confirm(call):
@@ -4111,68 +4364,34 @@ def handle_inbound_for_create(call):
     if not is_admin(call.from_user.id):
         bot.answer_callback_query(call.id, "❌ Нет доступа")
         return
-    
+
     try:
         parts = call.data.split('|')
-        # Новый формат: select_inbound|inbound_for_create|user_id|inbound_id
         if len(parts) >= 4:
             user_id = int(parts[2])
             inbound_id = int(parts[3])
         else:
-            # Старый формат для совместимости
             inbound_id = int(parts[-1])
             user_id = call.from_user.id
-            
     except Exception as e:
         print(f"❌ Ошибка парсинга callback_data: {e}")
         bot.answer_callback_query(call.id, "❌ Ошибка данных inbound")
         return
 
-    bot.answer_callback_query(call.id, f"⏳ Создаю в inbound {inbound_id}...")
-    
-    # Получаем данные из контекста
-    user_data_json = get_user_context(user_id, 'create_user_data')
-    if not user_data_json:
-        bot.send_message(call.message.chat.id, "❌ Данные пользователя утеряны. Начните создание заново.")
+    inbounds = get_inbounds_for_server(user_id)
+    selected_inbound = next((ib for ib in inbounds if ib.get('id') == inbound_id), None)
+    protocol = str(selected_inbound.get('protocol', '')).lower().strip() if selected_inbound else ''
+
+    if protocol == 'mixed':
+        bot.answer_callback_query(call.id, f"🧩 inbound {inbound_id}: protocol mixed")
+        msg = bot.send_message(call.message.chat.id, "👤 Введите username для mixed inbound:")
+        bot.register_next_step_handler(msg, create_user_mixed_username_step, user_id, inbound_id)
         return
-        
-    try:
-        user_data = json.loads(user_data_json)
-        username = user_data['username']
-        total_gb = user_data['total_gb']
-        expiry_days = user_data['expiry_days']
-    except Exception as e:
-        print(f"❌ Ошибка парсинга данных пользователя: {e}")
-        bot.send_message(call.message.chat.id, "❌ Ошибка данных пользователя. Начните создание заново.")
-        return
-    
-    current_server = get_current_server_config(user_id)
-    vm = get_vpn_manager(user_id)
-    
-    success = vm.create_user(username, inbound_id=inbound_id, total_gb=total_gb, expiry_days=expiry_days)
-    
-    if success:
-        response = f"✅ Пользователь успешно создан!\n\n"
-        response += f"🌐 Сервер: {current_server['name']}\n"
-        response += f"📥 Inbound ID: {inbound_id}\n"
-        response += f"👤 Имя: {username}\n"
-        response += f"💾 Лимит: {total_gb} GB\n" if total_gb > 0 else "💾 Лимит: Безлимит\n"
-        response += f"⏰ Срок: {expiry_days} дней\n" if expiry_days > 0 else "⏰ Срок: Бессрочно\n"
-        response += f"🔄 Flow: xtls-rprx-vision"
-        
-        # Очищаем контекст
-        clear_user_context(user_id, 'create_user_data')
-        
-        try:
-            bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id)
-        except:
-            bot.send_message(call.message.chat.id, response)
-    else:
-        error_msg = f"❌ Ошибка создания пользователя {username} в inbound {inbound_id} на сервере {current_server['name']}"
-        try:
-            bot.edit_message_text(text=error_msg, chat_id=call.message.chat.id, message_id=call.message.message_id)
-        except:
-            bot.send_message(call.message.chat.id, error_msg)
+
+    bot.answer_callback_query(call.id, f"📥 inbound {inbound_id} выбран")
+    msg = bot.send_message(call.message.chat.id, "👤 Введите имя нового пользователя:")
+    bot.register_next_step_handler(msg, create_user_step1, user_id, inbound_id)
+
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('select_inbound|inbound_for_delete'))
 def handle_inbound_for_delete(call):

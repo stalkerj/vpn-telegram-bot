@@ -20,7 +20,7 @@
 Выполните одну команду на чистом Ubuntu/Debian VPS:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/main/install-vpn-bot.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/stalkerj/vpn-telegram-bot/beta/install-vpn-bot.sh | sudo bash
 ```
 
 ### Что вам понадобится:

@@ -1932,63 +1932,144 @@ class VPNManager:
         if not self.is_authenticated:
             if not self.authenticate():
                 return []
-        try:
-            response = self.session.post(f"{self.base_url}/xui/API/inbounds/list", timeout=10)
-            if response.status_code == 200:
+
+        endpoints = [
+            f"{self.base_url}/xui/API/inbounds/list",
+            f"{self.base_url}/panel/api/inbounds/list",
+            f"{self.base_url}/xui/inbounds/list"
+        ]
+
+        for endpoint in endpoints:
+            try:
+                response = self.session.post(endpoint, timeout=10)
+                if response.status_code != 200:
+                    continue
                 result = response.json()
                 if result.get('success'):
                     inbounds = result.get('obj', [])
-                    print("📊 Доступные inbound'ы:")
+                    print(f"📊 Доступные inbound'ы (endpoint: {endpoint}):")
                     for inbound in inbounds:
                         print(f"   ID: {inbound.get('id')}, Protocol: {inbound.get('protocol')}, Port: {inbound.get('port')}")
                     return inbounds
-        except Exception as e:
-            print(f"❌ Ошибка получения inbound'ов: {e}")
+            except Exception as e:
+                print(f"⚠️ Ошибка получения inbound'ов через {endpoint}: {e}")
+                continue
+
+        print("❌ Не удалось получить inbound'ы ни через один endpoint")
         return []
-    
+
     def get_users_list(self) -> List[Dict]:
         """Агрегированный список пользователей по всем inbound'ам"""
         if not self.is_authenticated:
             if not self.authenticate():
                 return []
+
+        endpoints = [
+            f"{self.base_url}/xui/API/inbounds/list",
+            f"{self.base_url}/panel/api/inbounds/list",
+            f"{self.base_url}/xui/inbounds/list"
+        ]
+
+        inbounds = []
+        last_error = None
+        for endpoint in endpoints:
+            try:
+                response = self.session.post(endpoint, timeout=10)
+                if response.status_code != 200:
+                    continue
+                result = response.json()
+                if result.get('success'):
+                    inbounds = result.get('obj', [])
+                    break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not inbounds:
+            if last_error:
+                print(f"❌ Ошибка получения пользователей: {last_error}")
+            else:
+                print("❌ Не удалось получить inbound'ы для списка пользователей")
+            return []
+
         try:
-            response = self.session.post(f"{self.base_url}/xui/API/inbounds/list", timeout=10)
-            if response.status_code != 200:
-                print(f"❌ Ошибка получения inbound'ов: {response.status_code}")
-                return []
-            result = response.json()
-            if not result.get('success'):
-                print(f"❌ API ошибка: {result.get('msg', 'Unknown error')}")
-                return []
-            inbounds = result.get('obj', [])
             users_data = []
+            seen = set()
+
             for inbound in inbounds:
-                if 'clientStats' in inbound and inbound['clientStats']:
-                    for client in inbound['clientStats']:
-                        total_gb = client.get('total', 0) / (1024**3) if client.get('total', 0) > 0 else 'Безлимит'
-                        used_gb = client.get('down', 0) / (1024**3)  # Только входящий трафик (скачивание)
+                inbound_id = inbound.get('id')
+                inbound_port = inbound.get('port')
+                inbound_protocol = inbound.get('protocol')
+
+                # 1) Основной источник: clientStats
+                for client in inbound.get('clientStats') or []:
+                    client_name = client.get('email') or client.get('username') or client.get('user') or 'N/A'
+                    key = (inbound_id, str(client_name).lower().strip())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    total_gb = client.get('total', 0) / (1024**3) if client.get('total', 0) > 0 else 'Безлимит'
+                    used_gb = client.get('down', 0) / (1024**3)
+                    expiry_time = 'Безлимит'
+                    if client.get('expiryTime', 0) > 0:
+                        expiry_time = datetime.fromtimestamp(client.get('expiryTime') / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+                    users_data.append({
+                        'email': client_name,
+                        'enable': client.get('enable', False),
+                        'total_gb': total_gb,
+                        'used_gb': used_gb,
+                        'expiry_time': expiry_time,
+                        'inbound_id': inbound_id,
+                        'inbound_port': inbound_port,
+                        'protocol': inbound_protocol,
+                        'client_id': client.get('id'),
+                        'settings': inbound.get('settings', '{}'),
+                        'stream_settings': inbound.get('streamSettings', '{}')
+                    })
+
+                # 2) Fallback для mixed/нестандартных inbound: clients из settings
+                try:
+                    settings_obj = inbound.get('settings', '{}')
+                    settings_obj = json.loads(settings_obj) if isinstance(settings_obj, str) else settings_obj
+                    for client in settings_obj.get('clients', []):
+                        client_name = client.get('email') or client.get('username') or client.get('user') or 'N/A'
+                        key = (inbound_id, str(client_name).lower().strip())
+                        if key in seen:
+                            continue
+                        seen.add(key)
+
+                        total_raw = client.get('totalGB', 0)
+                        total_gb = total_raw / (1024**3) if isinstance(total_raw, (int, float)) and total_raw > 0 else 'Безлимит'
+                        expiry_raw = client.get('expiryTime', 0)
                         expiry_time = 'Безлимит'
-                        if client.get('expiryTime', 0) > 0:
-                            expiry_time = datetime.fromtimestamp(client.get('expiryTime') / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                        if isinstance(expiry_raw, (int, float)) and expiry_raw > 0:
+                            expiry_time = datetime.fromtimestamp(expiry_raw / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
                         users_data.append({
-                            'email': client.get('email', 'N/A'),
-                            'enable': client.get('enable', False),
+                            'email': client_name,
+                            'enable': client.get('enable', True),
                             'total_gb': total_gb,
-                            'used_gb': used_gb,
+                            'used_gb': 0.0,
                             'expiry_time': expiry_time,
-                            'inbound_id': inbound.get('id'),
-                            'inbound_port': inbound.get('port'),
-                            'protocol': inbound.get('protocol'),
+                            'inbound_id': inbound_id,
+                            'inbound_port': inbound_port,
+                            'protocol': inbound_protocol,
                             'client_id': client.get('id'),
                             'settings': inbound.get('settings', '{}'),
                             'stream_settings': inbound.get('streamSettings', '{}')
                         })
+                except Exception:
+                    pass
+
             return users_data
+
         except Exception as e:
             print(f"❌ Ошибка получения пользователей: {e}")
             self.is_authenticated = False
             return []
-    
+
     def get_detailed_inbound_settings(self, inbound_id: int) -> Optional[Dict]:
         """Детальные настройки по inbound"""
         if not self.is_authenticated:
@@ -2005,8 +2086,9 @@ class VPNManager:
             print(f"❌ Ошибка получения детальных настроек: {e}")
             return None
     
-    def create_user(self, username: str, inbound_id: int = 1, total_gb: int = 0, expiry_days: int = 0) -> bool:
-        """Создание пользователя в указанном inbound"""
+    def create_user(self, username: str, inbound_id: int = 1, total_gb: int = 0, expiry_days: int = 0,
+                    mixed_username: Optional[str] = None, mixed_password: Optional[str] = None) -> bool:
+        """Создание пользователя в указанном inbound (VLESS и mixed)"""
         print(f"🚀 Создание пользователя {username} в inbound {inbound_id}")
         print(f"   Параметры: total_gb={total_gb}, expiry_days={expiry_days}")
         
@@ -2015,21 +2097,36 @@ class VPNManager:
                 print("❌ Ошибка: не удалось аутентифицироваться")
                 return False
         
-        # Проверяем дубликат по email
-        existing_users = self.get_users_list()
-        if any(user['email'].lower() == username.lower() for user in existing_users):
-            print(f"❌ Пользователь {username} уже существует")
-            return False
-        
         # Проверяем inbound
         inbounds = self.get_available_inbounds()
         if not inbounds:
             print("❌ Нет доступных inbound'ов!")
             return False
         
-        if not any(ib.get('id') == inbound_id for ib in inbounds):
+        selected_inbound = next((ib for ib in inbounds if ib.get('id') == inbound_id), None)
+        if not selected_inbound:
             print(f"❌ Inbound с ID {inbound_id} не найден!")
             return False
+
+        inbound_protocol = str(selected_inbound.get('protocol', '')).lower().strip()
+
+        # Проверяем дубликат с учетом протокола
+        existing_users = self.get_users_list()
+        if inbound_protocol == 'mixed':
+            login_to_check = (mixed_username or '').lower().strip()
+            if not login_to_check:
+                print("❌ Для mixed inbound требуется логин")
+                return False
+            if any(
+                u.get('inbound_id') == inbound_id and str(u.get('email', '')).lower().strip() == login_to_check
+                for u in existing_users
+            ):
+                print(f"❌ Пользователь mixed {mixed_username} уже существует в inbound {inbound_id}")
+                return False
+        else:
+            if any(user['email'].lower() == username.lower() for user in existing_users):
+                print(f"❌ Пользователь {username} уже существует")
+                return False
         
         try:
             client_uuid = str(uuid.uuid4())
@@ -2039,19 +2136,29 @@ class VPNManager:
             print(f"   UUID: {client_uuid}")
             print(f"   Total bytes: {total_bytes}")
             print(f"   Expiry timestamp: {expiry_timestamp}")
-            
-            client_data = {
-                "id": client_uuid,
-                "email": username,
-                "enable": True,
-                "flow": "xtls-rprx-vision",
-                "limitIp": 0,
-                "totalGB": total_bytes,
-                "expiryTime": expiry_timestamp,
-                "tgId": "",
-                "subId": self._generate_sub_id(),
-                "reset": 0
-            }
+
+            if inbound_protocol == 'mixed':
+                if not mixed_username or not mixed_password:
+                    print("❌ Для mixed inbound требуются логин и пароль")
+                    return False
+                client_data = {
+                    "username": mixed_username,
+                    "password": mixed_password,
+                    "email": mixed_username
+                }
+            else:
+                client_data = {
+                    "id": client_uuid,
+                    "email": username,
+                    "enable": True,
+                    "flow": "xtls-rprx-vision",
+                    "limitIp": 0,
+                    "totalGB": total_bytes,
+                    "expiryTime": expiry_timestamp,
+                    "tgId": "",
+                    "subId": self._generate_sub_id(),
+                    "reset": 0
+                }
             
             request_payload = {
                 "id": inbound_id,
@@ -2092,12 +2199,22 @@ class VPNManager:
                                 
                                 # Проверяем, что пользователь действительно создан
                                 users_after = self.get_users_list()
-                                if any(u['email'].lower() == username.lower() for u in users_after):
-                                    print(f"✅ Пользователь {username} успешно создан!")
-                                    return True
+                                if inbound_protocol == 'mixed':
+                                    mixed_login = (mixed_username or '').lower().strip()
+                                    created = any(
+                                        u.get('inbound_id') == inbound_id and str(u.get('email', '')).lower().strip() == mixed_login
+                                        for u in users_after
+                                    )
+                                    if created:
+                                        print(f"✅ Пользователь mixed {mixed_username} успешно создан!")
+                                        return True
                                 else:
-                                    print(f"⚠️ API вернул success, но пользователь не найден в списке. Пробую следующий endpoint...")
-                                    continue
+                                    if any(u['email'].lower() == username.lower() for u in users_after):
+                                        print(f"✅ Пользователь {username} успешно создан!")
+                                        return True
+
+                                print(f"⚠️ API вернул success, но пользователь не найден в списке. Пробую следующий endpoint...")
+                                continue
                             else:
                                 error_msg = result.get('msg', 'Unknown error')
                                 print(f"❌ API вернул ошибку: {error_msg}")
@@ -2154,16 +2271,66 @@ class VPNManager:
             settings_str = detailed_settings.get('settings', '{}')
             settings = json.loads(settings_str) if isinstance(settings_str, str) else settings_str
             client_uuid = None
-            for client in settings.get('clients', []):
-                if str(client.get('email', '')).lower().strip() == username.lower().strip():
+            clients = settings.get('clients', [])
+            matched_client_index = None
+            for idx, client in enumerate(clients):
+                client_login = str(client.get('email') or client.get('username') or client.get('user') or '').lower().strip()
+                if client_login == username.lower().strip():
+                    matched_client_index = idx
                     client_uuid = client.get('id')
                     break
-            if not client_uuid:
-                print(f"❌ UUID клиента {username} в inbound {inbound_id} не найден")
-                return False
+
             headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
-            api_url = f"{self.base_url}/panel/api/inbounds/{inbound_id}/delClient/{client_uuid}"
-            response = self.session.post(api_url, headers=headers, timeout=15)
+
+            # Обычное удаление через delClient (VLESS и другие протоколы с id)
+            if client_uuid:
+                api_url = f"{self.base_url}/panel/api/inbounds/{inbound_id}/delClient/{client_uuid}"
+                response = self.session.post(api_url, headers=headers, timeout=15)
+            else:
+                # fallback для mixed: удаляем клиента из settings и обновляем inbound
+                if matched_client_index is None:
+                    print(f"❌ Клиент {username} в inbound {inbound_id} не найден")
+                    return False
+
+                clients.pop(matched_client_index)
+                updated_settings = dict(settings)
+                updated_settings['clients'] = clients
+
+                update_payload = {
+                    "id": inbound_id,
+                    "up": detailed_settings.get('up', 0),
+                    "down": detailed_settings.get('down', 0),
+                    "total": detailed_settings.get('total', 0),
+                    "remark": detailed_settings.get('remark', ''),
+                    "enable": detailed_settings.get('enable', True),
+                    "expiryTime": detailed_settings.get('expiryTime', 0),
+                    "listen": detailed_settings.get('listen', ''),
+                    "port": detailed_settings.get('port'),
+                    "protocol": detailed_settings.get('protocol', ''),
+                    "settings": json.dumps(updated_settings, separators=(',', ':')),
+                    "streamSettings": detailed_settings.get('streamSettings', '{}'),
+                    "sniffing": detailed_settings.get('sniffing', '{}'),
+                    "allocate": detailed_settings.get('allocate', '{}')
+                }
+
+                update_endpoints = [
+                    f"{self.base_url}/panel/api/inbounds/update/{inbound_id}",
+                    f"{self.base_url}/xui/API/inbounds/update/{inbound_id}"
+                ]
+
+                response = None
+                for endpoint in update_endpoints:
+                    try:
+                        response = self.session.post(endpoint, json=update_payload, headers=headers, timeout=15)
+                        if response.status_code == 200:
+                            break
+                    except Exception as e:
+                        print(f"⚠️ Ошибка update endpoint {endpoint}: {e}")
+                        continue
+
+                if response is None:
+                    print(f"❌ Не удалось выполнить update inbound {inbound_id}")
+                    return False
             if response.status_code == 200:
                 try:
                     jr = response.json()
@@ -2175,7 +2342,7 @@ class VPNManager:
                         if detailed_after:
                             s_str = detailed_after.get('settings', '{}')
                             s_obj = json.loads(s_str) if isinstance(s_str, str) else s_str
-                            still = any(str(c.get('email', '')).lower().strip() == username.lower().strip() for c in s_obj.get('clients', []))
+                            still = any(str(c.get('email') or c.get('username') or c.get('user') or '').lower().strip() == username.lower().strip() for c in s_obj.get('clients', []))
                             if not still:
                                 print(f"✅ Пользователь {username} успешно удален из inbound {inbound_id}!")
                                 return True
@@ -2904,28 +3071,34 @@ def start_scheduler():
         print(f"✅ Задача 'Проверка серверов' запланирована (каждые {HEALTH_CHECK_INTERVAL_MINUTES} минут)")
         
         # Ежедневный отчет
-        scheduler.add_job(
-            send_daily_report,
-            trigger=CronTrigger(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE),
-            id='daily_report',
-            name='Ежедневный отчет',
-            replace_existing=True
-        )
-        print(f"✅ Задача 'Ежедневный отчет' запланирована ({DAILY_REPORT_HOUR:02d}:{DAILY_REPORT_MINUTE:02d})")
+        if DAILY_STATS_ENABLED:
+            scheduler.add_job(
+                send_daily_report,
+                trigger=CronTrigger(hour=DAILY_REPORT_HOUR, minute=DAILY_REPORT_MINUTE),
+                id='daily_report',
+                name='Ежедневный отчет',
+                replace_existing=True
+            )
+            print(f"✅ Задача 'Ежедневный отчет' запланирована ({DAILY_REPORT_HOUR:02d}:{DAILY_REPORT_MINUTE:02d})")
+        else:
+            print("ℹ️ Ежедневная статистика отключена в настройках — задача не запланирована")
         
         # Еженедельный отчет
-        scheduler.add_job(
-            send_weekly_report,
-            trigger=CronTrigger(
-                day_of_week=WEEKLY_REPORT_DAY,
-                hour=WEEKLY_REPORT_HOUR,
-                minute=WEEKLY_REPORT_MINUTE
-            ),
-            id='weekly_report',
-            name='Еженедельный отчет',
-            replace_existing=True
-        )
-        print(f"✅ Задача 'Еженедельный отчет' запланирована ({WEEKLY_REPORT_DAY} {WEEKLY_REPORT_HOUR:02d}:{WEEKLY_REPORT_MINUTE:02d})")
+        if WEEKLY_STATS_ENABLED:
+            scheduler.add_job(
+                send_weekly_report,
+                trigger=CronTrigger(
+                    day_of_week=WEEKLY_REPORT_DAY,
+                    hour=WEEKLY_REPORT_HOUR,
+                    minute=WEEKLY_REPORT_MINUTE
+                ),
+                id='weekly_report',
+                name='Еженедельный отчет',
+                replace_existing=True
+            )
+            print(f"✅ Задача 'Еженедельный отчет' запланирована ({WEEKLY_REPORT_DAY} {WEEKLY_REPORT_HOUR:02d}:{WEEKLY_REPORT_MINUTE:02d})")
+        else:
+            print("ℹ️ Еженедельная статистика отключена в настройках — задача не запланирована")
         
         # Запускаем планировщик
         scheduler.start()
@@ -4111,7 +4284,7 @@ def handle_inbound_for_create(call):
     if not is_admin(call.from_user.id):
         bot.answer_callback_query(call.id, "❌ Нет доступа")
         return
-    
+
     try:
         parts = call.data.split('|')
         # Новый формат: select_inbound|inbound_for_create|user_id|inbound_id
@@ -4122,20 +4295,18 @@ def handle_inbound_for_create(call):
             # Старый формат для совместимости
             inbound_id = int(parts[-1])
             user_id = call.from_user.id
-            
+
     except Exception as e:
         print(f"❌ Ошибка парсинга callback_data: {e}")
         bot.answer_callback_query(call.id, "❌ Ошибка данных inbound")
         return
 
-    bot.answer_callback_query(call.id, f"⏳ Создаю в inbound {inbound_id}...")
-    
     # Получаем данные из контекста
     user_data_json = get_user_context(user_id, 'create_user_data')
     if not user_data_json:
         bot.send_message(call.message.chat.id, "❌ Данные пользователя утеряны. Начните создание заново.")
         return
-        
+
     try:
         user_data = json.loads(user_data_json)
         username = user_data['username']
@@ -4145,12 +4316,35 @@ def handle_inbound_for_create(call):
         print(f"❌ Ошибка парсинга данных пользователя: {e}")
         bot.send_message(call.message.chat.id, "❌ Ошибка данных пользователя. Начните создание заново.")
         return
-    
-    current_server = get_current_server_config(user_id)
+
     vm = get_vpn_manager(user_id)
-    
+    inbounds = vm.get_available_inbounds()
+    selected_inbound = next((ib for ib in inbounds if ib.get('id') == inbound_id), None)
+    if not selected_inbound:
+        bot.answer_callback_query(call.id, "❌ Inbound не найден")
+        return
+
+    inbound_protocol = str(selected_inbound.get('protocol', '')).lower().strip()
+
+    # Для mixed запрашиваем логин и пароль после выбора inbound
+    if inbound_protocol == 'mixed':
+        user_data['selected_inbound_id'] = inbound_id
+        set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+        bot.answer_callback_query(call.id, "🔐 mixed: введите логин")
+        msg = bot.send_message(
+            call.message.chat.id,
+            f"📥 Выбран inbound {inbound_id} (mixed).\n\n"
+            "👤 Введите логин для нового пользователя:"
+        )
+        bot.register_next_step_handler(msg, create_mixed_user_login_step, user_id)
+        return
+
+    bot.answer_callback_query(call.id, f"⏳ Создаю в inbound {inbound_id}...")
+
+    current_server = get_current_server_config(user_id)
     success = vm.create_user(username, inbound_id=inbound_id, total_gb=total_gb, expiry_days=expiry_days)
-    
+
     if success:
         response = f"✅ Пользователь успешно создан!\n\n"
         response += f"🌐 Сервер: {current_server['name']}\n"
@@ -4159,20 +4353,143 @@ def handle_inbound_for_create(call):
         response += f"💾 Лимит: {total_gb} GB\n" if total_gb > 0 else "💾 Лимит: Безлимит\n"
         response += f"⏰ Срок: {expiry_days} дней\n" if expiry_days > 0 else "⏰ Срок: Бессрочно\n"
         response += f"🔄 Flow: xtls-rprx-vision"
-        
+
         # Очищаем контекст
         clear_user_context(user_id, 'create_user_data')
-        
+
         try:
             bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id)
         except:
             bot.send_message(call.message.chat.id, response)
+
+        # Для VLESS сразу отправляем текстовый конфиг и QR-код
+        if inbound_protocol == 'vless':
+            try:
+                config = None
+                # Даем панели время применить клиента и пробуем несколько раз
+                for _ in range(5):
+                    config = vm.get_client_config(username)
+                    if config:
+                        break
+                    time.sleep(1)
+
+                if config:
+                    # Текстовая версия конфига
+                    safe_config = config.replace('`', '\`')
+                    bot.send_message(
+                        call.message.chat.id,
+                        f"📄 VLESS конфиг для {username}:\n\n`{safe_config}`",
+                        parse_mode='Markdown'
+                    )
+
+                    # Файл конфига
+                    config_bio = io.BytesIO(config.encode('utf-8'))
+                    config_bio.name = f"{username}_vless.txt"
+                    bot.send_document(
+                        call.message.chat.id,
+                        document=config_bio,
+                        caption=f"📄 VLESS конфигурация для {username}\n🌐 Сервер: {current_server['name']}\n🔄 Flow: xtls-rprx-vision"
+                    )
+
+                    # QR-код
+                    qr_image = generate_qr_code(config)
+                    bot.send_photo(
+                        call.message.chat.id,
+                        photo=qr_image,
+                        caption=f"🎯 QR-код для подключения к VPN\n📧 Пользователь: {username}\n🌐 Сервер: {current_server['name']}\n🔄 Flow: xtls-rprx-vision"
+                    )
+                else:
+                    bot.send_message(call.message.chat.id, f"⚠️ Пользователь создан, но не удалось сгенерировать конфиг для {username}")
+            except Exception as e:
+                print(f"❌ Ошибка отправки конфига/QR после создания пользователя: {e}")
+                bot.send_message(call.message.chat.id, "⚠️ Пользователь создан, но произошла ошибка при отправке конфига и QR-кода")
     else:
         error_msg = f"❌ Ошибка создания пользователя {username} в inbound {inbound_id} на сервере {current_server['name']}"
         try:
             bot.edit_message_text(text=error_msg, chat_id=call.message.chat.id, message_id=call.message.message_id)
         except:
             bot.send_message(call.message.chat.id, error_msg)
+
+
+def create_mixed_user_login_step(message, user_id: int):
+    if not is_admin(message.from_user.id):
+        return
+
+    mixed_login = (message.text or '').strip()
+    if len(mixed_login) < 3 or any(ch in mixed_login for ch in [' ', '\n', '\t', '\r']):
+        msg = bot.reply_to(message, "❌ Некорректный логин. Минимум 3 символа, без пробелов. Введите снова:")
+        bot.register_next_step_handler(msg, create_mixed_user_login_step, user_id)
+        return
+
+    user_data_json = get_user_context(user_id, 'create_user_data')
+    if not user_data_json:
+        bot.reply_to(message, "❌ Данные пользователя утеряны. Начните создание заново.")
+        return
+
+    try:
+        user_data = json.loads(user_data_json)
+    except Exception:
+        bot.reply_to(message, "❌ Ошибка данных пользователя. Начните создание заново.")
+        return
+
+    user_data['mixed_username'] = mixed_login
+    set_user_context(user_id, 'create_user_data', json.dumps(user_data))
+
+    msg = bot.reply_to(message, f"👤 Логин: {mixed_login}\n\n🔑 Введите пароль для mixed-пользователя:")
+    bot.register_next_step_handler(msg, create_mixed_user_password_step, user_id)
+
+
+def create_mixed_user_password_step(message, user_id: int):
+    if not is_admin(message.from_user.id):
+        return
+
+    mixed_password = (message.text or '').strip()
+    if len(mixed_password) < 3:
+        msg = bot.reply_to(message, "❌ Пароль слишком короткий (минимум 3 символа). Введите снова:")
+        bot.register_next_step_handler(msg, create_mixed_user_password_step, user_id)
+        return
+
+    user_data_json = get_user_context(user_id, 'create_user_data')
+    if not user_data_json:
+        bot.reply_to(message, "❌ Данные пользователя утеряны. Начните создание заново.")
+        return
+
+    try:
+        user_data = json.loads(user_data_json)
+        username = user_data['username']
+        total_gb = user_data['total_gb']
+        expiry_days = user_data['expiry_days']
+        inbound_id = int(user_data['selected_inbound_id'])
+        mixed_username = user_data['mixed_username']
+    except Exception as e:
+        print(f"❌ Ошибка парсинга mixed-данных пользователя: {e}")
+        bot.reply_to(message, "❌ Ошибка данных пользователя. Начните создание заново.")
+        return
+
+    vm = get_vpn_manager(user_id)
+    current_server = get_current_server_config(user_id)
+    success = vm.create_user(
+        username,
+        inbound_id=inbound_id,
+        total_gb=total_gb,
+        expiry_days=expiry_days,
+        mixed_username=mixed_username,
+        mixed_password=mixed_password
+    )
+
+    if success:
+        response = f"✅ Пользователь mixed успешно создан!\n\n"
+        response += f"🌐 Сервер: {current_server['name']}\n"
+        response += f"📥 Inbound ID: {inbound_id}\n"
+        response += f"👤 Логин: {mixed_username}\n"
+        response += f"🔑 Пароль: {mixed_password}"
+        clear_user_context(user_id, 'create_user_data')
+        bot.send_message(message.chat.id, response)
+    else:
+        bot.send_message(
+            message.chat.id,
+            f"❌ Ошибка создания mixed-пользователя {mixed_username} в inbound {inbound_id} на сервере {current_server['name']}"
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('select_inbound|inbound_for_delete'))
 def handle_inbound_for_delete(call):

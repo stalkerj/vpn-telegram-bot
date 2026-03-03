@@ -3091,6 +3091,9 @@ def create_server_menu_keyboard() -> types.InlineKeyboardMarkup:
         types.InlineKeyboardButton("💾 Экспорт бекапа", callback_data="menu_export_backup"),
         types.InlineKeyboardButton("🔄 Перезапуск", callback_data="menu_restart")
     )
+    markup.add(
+        types.InlineKeyboardButton("📅 Настройка рассылки", callback_data="menu_stats_settings")
+    )
     return markup
 
 def create_users_menu_keyboard() -> types.InlineKeyboardMarkup:
@@ -3446,6 +3449,239 @@ def handle_menu_server_stats(call):
             bot.edit_message_text(text=f"❌ Ошибка при получении статистики: {e}", chat_id=call.message.chat.id, message_id=call.message.message_id)
         except:
             bot.send_message(call.message.chat.id, f"❌ Ошибка при получении статистики: {e}")
+
+
+
+def _build_tz_keyboard(mode: str, user_id: int) -> types.InlineKeyboardMarkup:
+    """Клавиатура выбора часового пояса (UTC-12 до UTC+14 с шагом 1 час)"""
+    set_user_context(user_id, "stats_input_mode", mode)
+    markup = types.InlineKeyboardMarkup(row_width=4)
+    buttons = []
+    for offset in range(-12, 15):
+        sign = "+" if offset >= 0 else ""
+        label = f"UTC{sign}{offset}"
+        buttons.append(types.InlineKeyboardButton(label, callback_data=f"stats_tz_select|{offset * 60}|{mode}"))
+    for i in range(0, len(buttons), 4):
+        markup.row(*buttons[i:i+4])
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="menu_stats_settings"))
+    return markup
+
+
+# ===== НАСТРОЙКА РАССЫЛКИ СТАТИСТИКИ =====
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_stats_settings")
+def handle_stats_settings(call):
+    """Главное меню настройки рассылки статистики"""
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    from dotenv import dotenv_values
+    env = dotenv_values("/root/vpn-bot/.env")
+
+    daily_enabled = env.get("DAILY_STATS_ENABLED", "True").strip() == "True"
+    weekly_enabled = env.get("WEEKLY_STATS_ENABLED", "True").strip() == "True"
+    daily_hour = env.get("DAILY_STATS_HOUR", "9").strip()
+    daily_minute = env.get("DAILY_STATS_MINUTE", "0").strip()
+    weekly_day = env.get("WEEKLY_STATS_DAY", "mon").strip()
+    weekly_hour = env.get("WEEKLY_STATS_HOUR", "10").strip()
+    weekly_minute = env.get("WEEKLY_STATS_MINUTE", "0").strip()
+
+    days_ru = {"mon": "Понедельник", "tue": "Вторник", "wed": "Среда",
+               "thu": "Четверг", "fri": "Пятница", "sat": "Суббота", "sun": "Воскресенье"}
+    day_name = days_ru.get(weekly_day, weekly_day)
+
+    response = "📅 *Настройка рассылки статистики*
+
+"
+    response += f"📊 *Ежедневная статистика:*
+"
+    response += f"  Статус: {'✅ Включена' if daily_enabled else '❌ Выключена'}
+"
+    response += f"  Время: `{int(daily_hour):02d}:{int(daily_minute):02d}` (по часовому поясу сервера)
+
+"
+    response += f"📈 *Еженедельная статистика:*
+"
+    response += f"  Статус: {'✅ Включена' if weekly_enabled else '❌ Выключена'}
+"
+    response += f"  День: {day_name}
+"
+    response += f"  Время: `{int(weekly_hour):02d}:{int(weekly_minute):02d}` (по часовому поясу сервера)
+
+"
+    response += "⚙️ Выберите что настроить:"
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            f"{'🔴 Выключить' if daily_enabled else '🟢 Включить'} ежедневную",
+            callback_data="stats_toggle_daily"
+        ),
+        types.InlineKeyboardButton("🕐 Время ежедневной", callback_data="stats_set_daily_time"),
+        types.InlineKeyboardButton(
+            f"{'🔴 Выключить' if weekly_enabled else '🟢 Включить'} еженедельную",
+            callback_data="stats_toggle_weekly"
+        ),
+        types.InlineKeyboardButton("🗓 День еженедельной", callback_data="stats_set_weekly_day"),
+        types.InlineKeyboardButton("🕐 Время еженедельной", callback_data="stats_set_weekly_time"),
+        types.InlineKeyboardButton("🔙 Назад", callback_data="menu_back_to_server")
+    )
+
+    try:
+        bot.edit_message_text(text=response, chat_id=call.message.chat.id,
+                              message_id=call.message.message_id,
+                              parse_mode='Markdown', reply_markup=markup)
+    except:
+        bot.send_message(call.message.chat.id, response, parse_mode='Markdown', reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "stats_toggle_daily")
+def handle_stats_toggle_daily(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    from dotenv import dotenv_values
+    import subprocess
+    env = dotenv_values("/root/vpn-bot/.env")
+    current = env.get("DAILY_STATS_ENABLED", "True").strip()
+    new_val = "False" if current == "True" else "True"
+
+    subprocess.run(['sed', '-i', f's/^DAILY_STATS_ENABLED=.*/DAILY_STATS_ENABLED={new_val}/',
+                    '/root/vpn-bot/.env'], capture_output=True)
+
+    status = "включена ✅" if new_val == "True" else "выключена ❌"
+    bot.answer_callback_query(call.id, f"Ежедневная статистика {status}")
+    handle_stats_settings(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "stats_toggle_weekly")
+def handle_stats_toggle_weekly(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    from dotenv import dotenv_values
+    import subprocess
+    env = dotenv_values("/root/vpn-bot/.env")
+    current = env.get("WEEKLY_STATS_ENABLED", "True").strip()
+    new_val = "False" if current == "True" else "True"
+
+    subprocess.run(['sed', '-i', f's/^WEEKLY_STATS_ENABLED=.*/WEEKLY_STATS_ENABLED={new_val}/',
+                    '/root/vpn-bot/.env'], capture_output=True)
+
+    status = "включена ✅" if new_val == "True" else "выключена ❌"
+    bot.answer_callback_query(call.id, f"Еженедельная статистика {status}")
+    handle_stats_settings(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "stats_set_daily_time")
+def handle_stats_set_daily_time(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    set_user_context(call.from_user.id, "stats_input_mode", "daily_time")
+    set_user_context(call.from_user.id, "stats_msg_id", str(call.message.message_id))
+    set_user_context(call.from_user.id, "stats_chat_id", str(call.message.chat.id))
+
+    tz_markup = _build_tz_keyboard("daily_time", call.from_user.id)
+    msg = ("⏰ *Установка времени ежедневной статистики*
+
+"
+           "Шаг 1: выберите ваш часовой пояс:")
+    try:
+        bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
+                              message_id=call.message.message_id, parse_mode='Markdown',
+                              reply_markup=tz_markup)
+    except:
+        bot.send_message(call.message.chat.id, msg, parse_mode='Markdown', reply_markup=tz_markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "stats_set_weekly_time")
+def handle_stats_set_weekly_time(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    set_user_context(call.from_user.id, "stats_input_mode", "weekly_time")
+    set_user_context(call.from_user.id, "stats_msg_id", str(call.message.message_id))
+    set_user_context(call.from_user.id, "stats_chat_id", str(call.message.chat.id))
+
+    tz_markup = _build_tz_keyboard("weekly_time", call.from_user.id)
+    msg = ("⏰ *Установка времени еженедельной статистики*
+
+"
+           "Шаг 1: выберите ваш часовой пояс:")
+    try:
+        bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
+                              message_id=call.message.message_id, parse_mode='Markdown',
+                              reply_markup=tz_markup)
+    except:
+        bot.send_message(call.message.chat.id, msg, parse_mode='Markdown', reply_markup=tz_markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "stats_set_weekly_day")
+def handle_stats_set_weekly_day(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    days = [("Понедельник", "mon"), ("Вторник", "tue"), ("Среда", "wed"),
+            ("Четверг", "thu"), ("Пятница", "fri"), ("Суббота", "sat"), ("Воскресенье", "sun")]
+    for name, code in days:
+        markup.add(types.InlineKeyboardButton(name, callback_data=f"stats_day|{code}"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="menu_stats_settings"))
+
+    msg = "🗓 *Выберите день для еженедельной статистики:*"
+    try:
+        bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
+                              message_id=call.message.message_id, parse_mode='Markdown',
+                              reply_markup=markup)
+    except:
+        bot.send_message(call.message.chat.id, msg, parse_mode='Markdown', reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("stats_day|"))
+def handle_stats_day_select(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Нет доступа")
+        return
+
+    import subprocess
+    day_code = call.data.split("|")[1]
+    days_ru = {"mon": "Понедельник", "tue": "Вторник", "wed": "Среда",
+               "thu": "Четверг", "fri": "Пятница", "sat": "Суббота", "sun": "Воскресенье"}
+
+    subprocess.run(['sed', '-i', f's/^WEEKLY_STATS_DAY=.*/WEEKLY_STATS_DAY={day_code}/',
+                    '/root/vpn-bot/.env'], capture_output=True)
+
+    bot.answer_callback_query(call.id, f"День установлен: {days_ru.get(day_code, day_code)}")
+    handle_stats_settings(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_back_to_server")
+def handle_back_to_server(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id)
+        return
+    current_server = get_current_server_config(call.from_user.id)
+    markup = create_server_menu_keyboard()
+    response = f"🌐 *Управление сервером: {safe_markdown_text(current_server['name'])}*"
+    try:
+        bot.edit_message_text(text=response, chat_id=call.message.chat.id,
+                              message_id=call.message.message_id,
+                              parse_mode='Markdown', reply_markup=markup)
+    except:
+        bot.send_message(call.message.chat.id, response, parse_mode='Markdown', reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
 
 @bot.callback_query_handler(func=lambda call: call.data == "menu_system_monitor")
 def handle_system_monitor(call):
@@ -4516,6 +4752,110 @@ def handle_monitoring_callbacks(call):
         bot.answer_callback_query(call.id, f"❌ Ошибка: {str(e)}")
 
 # Универсальный обработчик для всех неизвестных сообщений
+@bot.message_handler(func=lambda message: get_user_context(message.from_user.id, "stats_input_mode") in ("daily_time", "weekly_time"))
+def handle_stats_time_input(message):
+    """Обработка ввода времени для статистики с конвертацией часового пояса"""
+    if not is_admin(message.from_user.id):
+        return
+
+    import re as _re
+    import subprocess
+    from datetime import datetime, timezone, timedelta
+
+    mode = get_user_context(message.from_user.id, "stats_input_mode")
+    text = message.text.strip()
+
+    match = _re.match(r'^(\d{1,2}):(\d{2})$', text)
+    if not match:
+        bot.reply_to(message, "❌ Неверный формат. Введите время как `ЧЧ:ММ`, например `09:30`",
+                     parse_mode='Markdown')
+        return
+
+    hour_local = int(match.group(1))
+    minute_local = int(match.group(2))
+
+    if not (0 <= hour_local <= 23 and 0 <= minute_local <= 59):
+        bot.reply_to(message, "❌ Час должен быть 0–23, минуты 0–59.")
+        return
+
+    # Получаем смещение часового пояса клиента из контекста (если сохранено)
+    # Иначе используем время как UTC (сохраняем как есть)
+    tz_offset_str = get_user_context(message.from_user.id, "tz_offset_minutes")
+    if tz_offset_str is not None:
+        tz_offset_minutes = int(tz_offset_str)
+        # Переводим локальное время в UTC
+        local_dt = datetime(2000, 1, 1, hour_local, minute_local,
+                            tzinfo=timezone(timedelta(minutes=tz_offset_minutes)))
+        utc_dt = local_dt.astimezone(timezone.utc)
+        hour_utc = utc_dt.hour
+        minute_utc = utc_dt.minute
+        tz_label = f"UTC{'+' if tz_offset_minutes >= 0 else ''}{tz_offset_minutes // 60:02d}:{abs(tz_offset_minutes % 60):02d}"
+        tz_note = f"(введено {hour_local:02d}:{minute_local:02d} {tz_label} → UTC {hour_utc:02d}:{minute_utc:02d})"
+    else:
+        hour_utc = hour_local
+        minute_utc = minute_local
+        tz_note = "(часовой пояс не определён, сохранено как UTC)"
+
+    if mode == "daily_time":
+        subprocess.run(['sed', '-i', f's/^DAILY_STATS_HOUR=.*/DAILY_STATS_HOUR={hour_utc}/',
+                        '/root/vpn-bot/.env'], capture_output=True)
+        subprocess.run(['sed', '-i', f's/^DAILY_STATS_MINUTE=.*/DAILY_STATS_MINUTE={minute_utc}/',
+                        '/root/vpn-bot/.env'], capture_output=True)
+        label = "ежедневной"
+    else:
+        subprocess.run(['sed', '-i', f's/^WEEKLY_STATS_HOUR=.*/WEEKLY_STATS_HOUR={hour_utc}/',
+                        '/root/vpn-bot/.env'], capture_output=True)
+        subprocess.run(['sed', '-i', f's/^WEEKLY_STATS_MINUTE=.*/WEEKLY_STATS_MINUTE={minute_utc}/',
+                        '/root/vpn-bot/.env'], capture_output=True)
+        label = "еженедельной"
+
+    clear_user_context(message.from_user.id, ["stats_input_mode", "stats_msg_id", "stats_chat_id"])
+
+    bot.reply_to(message,
+                 f"✅ Время {label} статистики установлено: `{hour_local:02d}:{minute_local:02d}` {tz_note}\n\n"
+                 f"Введите /start и перейдите в 🌐 Сервер → 📅 Настройка рассылки для проверки.",
+                 parse_mode='Markdown')
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("stats_tz_select|"))
+def handle_stats_tz_select(call):
+    """Пользователь выбрал часовой пояс — сохраняем и просим ввести время"""
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        parts = call.data.split("|")
+        offset_minutes = int(parts[1])
+        mode = parts[2]
+        set_user_context(call.from_user.id, "tz_offset_minutes", str(offset_minutes))
+        set_user_context(call.from_user.id, "stats_input_mode", mode)
+        set_user_context(call.from_user.id, "stats_msg_id", str(call.message.message_id))
+        set_user_context(call.from_user.id, "stats_chat_id", str(call.message.chat.id))
+
+        sign = "+" if offset_minutes >= 0 else ""
+        tz_label = f"UTC{sign}{offset_minutes // 60}"
+        label = "ежедневной" if mode == "daily_time" else "еженедельной"
+
+        msg = (f"⏰ *Установка времени {label} статистики*
+
+"
+               f"Часовой пояс: *{tz_label}*
+
+"
+               f"Шаг 2: введите время в формате `ЧЧ:ММ`
+"
+               f"Например: `09:00`")
+        try:
+            bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id, parse_mode='Markdown')
+        except:
+            bot.send_message(call.message.chat.id, msg, parse_mode='Markdown')
+        bot.answer_callback_query(call.id, f"Выбран {tz_label}")
+    except Exception as e:
+        bot.answer_callback_query(call.id, "Ошибка")
+        print(f"handle_stats_tz_select error: {e}")
+
+
 @bot.message_handler(func=lambda message: True)
 def handle_unknown(message):
     if not is_admin(message.from_user.id):

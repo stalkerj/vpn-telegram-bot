@@ -4166,21 +4166,30 @@ def handle_inbound_for_create(call):
     success = vm.create_user(username, inbound_id=inbound_id, total_gb=total_gb, expiry_days=expiry_days)
     
     if success:
-        response = f"✅ Пользователь успешно создан!\n\n"
-        response += f"🌐 Сервер: {current_server['name']}\n"
-        response += f"📥 Inbound ID: {inbound_id}\n"
-        response += f"👤 Имя: {username}\n"
-        response += f"💾 Лимит: {total_gb} GB\n" if total_gb > 0 else "💾 Лимит: Безлимит\n"
-        response += f"⏰ Срок: {expiry_days} дней\n" if expiry_days > 0 else "⏰ Срок: Бессрочно\n"
+        response = f"✅ Пользователь успешно создан!\\n\\n"
+        response += f"🌐 Сервер: {current_server['name']}\\n"
+        response += f"📥 Inbound ID: {inbound_id}\\n"
+        response += f"👤 Имя: {username}\\n"
+        response += f"💾 Лимит: {total_gb} GB\\n" if total_gb > 0 else "💾 Лимит: Безлимит\\n"
+        response += f"⏰ Срок: {expiry_days} дней\\n" if expiry_days > 0 else "⏰ Срок: Бессрочно\\n"
         response += f"🔄 Flow: xtls-rprx-vision"
         
         # Очищаем контекст
         clear_user_context(user_id, 'create_user_data')
         
+        # Формируем кнопки VLESS и QR-код (как для существующих пользователей)
+        markup_new = types.InlineKeyboardMarkup()
+        username_encoded_new = safe_encode_username(username)
+        markup_new.row(
+            types.InlineKeyboardButton("📄 VLESS", callback_data=f"download_vless|{username_encoded_new}"),
+            types.InlineKeyboardButton("🎯 QR-код", callback_data=f"download_qr|{username_encoded_new}")
+        )
+        markup_new.add(types.InlineKeyboardButton("🔙 К списку", callback_data="users_page|0"))
+        
         try:
-            bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id)
+            bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup_new)
         except:
-            bot.send_message(call.message.chat.id, response)
+            bot.send_message(call.message.chat.id, response, reply_markup=markup_new)
     else:
         error_msg = f"❌ Ошибка создания пользователя {username} в inbound {inbound_id} на сервере {current_server['name']}"
         try:

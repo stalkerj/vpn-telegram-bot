@@ -2854,7 +2854,7 @@ def generate_traffic_report(period: str = 'daily') -> str:
         print(traceback.format_exc())
         return f"❌ Ошибка генерации отчета: {safe_markdown_text(str(e))}"
 
-def def send_daily_report():
+def send_daily_report():
     """
     Фоновая задача: отправка ежедневного отчета
     """
@@ -2874,6 +2874,7 @@ def def send_daily_report():
     except Exception as e:
         print(f"❌ Ошибка отправки ежедневного отчета: {e}")
         print(traceback.format_exc())
+
 
 def send_weekly_report():
     """
@@ -4164,7 +4165,7 @@ def handle_inbound_for_create(call):
     
     success = vm.create_user(username, inbound_id=inbound_id, total_gb=total_gb, expiry_days=expiry_days)
     
-        if success:
+    if success:
         response = f"✅ Пользователь успешно создан!\n\n"
         response += f"🌐 Сервер: {current_server['name']}\n"
         response += f"📥 Inbound ID: {inbound_id}\n"
@@ -4180,29 +4181,6 @@ def handle_inbound_for_create(call):
             bot.edit_message_text(text=response, chat_id=call.message.chat.id, message_id=call.message.message_id)
         except:
             bot.send_message(call.message.chat.id, response)
-
-        # Отправляем VLESS конфиг и QR-код (как для существующих пользователей)
-        try:
-            vpn_manager_new = get_vpn_manager(user_id)
-            config_new = vpn_manager_new.get_client_config(username)
-            if config_new:
-                config_bio_new = io.BytesIO(config_new.encode('utf-8'))
-                config_bio_new.name = f"{username}_vless.txt"
-                bot.send_document(
-                    call.message.chat.id,
-                    document=config_bio_new,
-                    caption=f"📄 VLESS конфиг для *{safe_markdown_text(username)}* | {safe_markdown_text(current_server['name'])}\nFlow: xtls-rprx-vision",
-                    parse_mode='Markdown'
-                )
-                qr_image_new = generate_qr_code(config_new)
-                bot.send_photo(
-                    call.message.chat.id,
-                    photo=qr_image_new,
-                    caption=f"📱 QR-код VPN для *{safe_markdown_text(username)}* | {safe_markdown_text(current_server['name'])}\nFlow: xtls-rprx-vision",
-                    parse_mode='Markdown'
-                )
-        except Exception as e_qr:
-            print(f"⚠️ Не удалось отправить VLESS/QR для нового пользователя: {e_qr}")
     else:
         error_msg = f"❌ Ошибка создания пользователя {username} в inbound {inbound_id} на сервере {current_server['name']}"
         try:

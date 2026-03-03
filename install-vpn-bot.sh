@@ -3491,26 +3491,21 @@ def handle_stats_settings(call):
                "thu": "Четверг", "fri": "Пятница", "sat": "Суббота", "sun": "Воскресенье"}
     day_name = days_ru.get(weekly_day, weekly_day)
 
-    response = "📅 *Настройка рассылки статистики*
-
-"
-    response += f"📊 *Ежедневная статистика:*
-"
-    response += f"  Статус: {'✅ Включена' if daily_enabled else '❌ Выключена'}
-"
-    response += f"  Время: `{int(daily_hour):02d}:{int(daily_minute):02d}` (по часовому поясу сервера)
-
-"
-    response += f"📈 *Еженедельная статистика:*
-"
-    response += f"  Статус: {'✅ Включена' if weekly_enabled else '❌ Выключена'}
-"
-    response += f"  День: {day_name}
-"
-    response += f"  Время: `{int(weekly_hour):02d}:{int(weekly_minute):02d}` (по часовому поясу сервера)
-
-"
-    response += "⚙️ Выберите что настроить:"
+    lines_resp = [
+        '📅 *Настройка рассылки статистики*',
+        '',
+        '📊 *Ежедневная статистика:*',
+        f"  Статус: {'✅ Включена' if daily_enabled else '❌ Выключена'}",
+        f"  Время: `{int(daily_hour):02d}:{int(daily_minute):02d}` (время сервера)",
+        '',
+        '📈 *Еженедельная статистика:*',
+        f"  Статус: {'✅ Включена' if weekly_enabled else '❌ Выключена'}",
+        f"  День: {day_name}",
+        f"  Время: `{int(weekly_hour):02d}:{int(weekly_minute):02d}` (время сервера)",
+        '',
+        '⚙️ Выберите что настроить:',
+    ]
+    response = '\n'.join(lines_resp)
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -3588,10 +3583,7 @@ def handle_stats_set_daily_time(call):
     set_user_context(call.from_user.id, "stats_chat_id", str(call.message.chat.id))
 
     tz_markup = _build_tz_keyboard("daily_time", call.from_user.id)
-    msg = ("⏰ *Установка времени ежедневной статистики*
-
-"
-           "Шаг 1: выберите ваш часовой пояс:")
+    msg = "⏰ *Установка времени ежедневной статистики*\n\nШаг 1: выберите ваш часовой пояс:"
     try:
         bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
                               message_id=call.message.message_id, parse_mode='Markdown',
@@ -3612,10 +3604,7 @@ def handle_stats_set_weekly_time(call):
     set_user_context(call.from_user.id, "stats_chat_id", str(call.message.chat.id))
 
     tz_markup = _build_tz_keyboard("weekly_time", call.from_user.id)
-    msg = ("⏰ *Установка времени еженедельной статистики*
-
-"
-           "Шаг 1: выберите ваш часовой пояс:")
+    msg = "⏰ *Установка времени еженедельной статистики*\n\nШаг 1: выберите ваш часовой пояс:"
     try:
         bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
                               message_id=call.message.message_id, parse_mode='Markdown',
@@ -4402,13 +4391,17 @@ def handle_inbound_for_create(call):
     success = vm.create_user(username, inbound_id=inbound_id, total_gb=total_gb, expiry_days=expiry_days)
     
     if success:
-        response = f"✅ Пользователь успешно создан!\\n\\n"
-        response += f"🌐 Сервер: {current_server['name']}\\n"
-        response += f"📥 Inbound ID: {inbound_id}\\n"
-        response += f"👤 Имя: {username}\\n"
-        response += f"💾 Лимит: {total_gb} GB\\n" if total_gb > 0 else "💾 Лимит: Безлимит\\n"
-        response += f"⏰ Срок: {expiry_days} дней\\n" if expiry_days > 0 else "⏰ Срок: Бессрочно\\n"
-        response += f"🔄 Flow: xtls-rprx-vision"
+        response_lines = [
+            "✅ Пользователь успешно создан!",
+            "",
+            f"🌐 Сервер: {current_server['name']}",
+            f"📥 Inbound ID: {inbound_id}",
+            f"👤 Имя: {username}",
+            f"💾 Лимит: {total_gb} GB" if total_gb > 0 else "💾 Лимит: Безлимит",
+            f"⏰ Срок: {expiry_days} дней" if expiry_days > 0 else "⏰ Срок: Бессрочно",
+            "🔄 Flow: xtls-rprx-vision",
+        ]
+        response = "\n".join(response_lines)
         
         # Очищаем контекст
         clear_user_context(user_id, 'create_user_data')
@@ -4813,7 +4806,7 @@ def handle_stats_time_input(message):
 
     bot.reply_to(message,
                  f"✅ Время {label} статистики установлено: `{hour_local:02d}:{minute_local:02d}` {tz_note}\n\n"
-                 f"Введите /start и перейдите в 🌐 Сервер → 📅 Настройка рассылки для проверки.",
+                 "Введите /start и перейдите в 🌐 Сервер → 📅 Настройка рассылки для проверки.",
                  parse_mode='Markdown')
 
 
@@ -4836,15 +4829,7 @@ def handle_stats_tz_select(call):
         tz_label = f"UTC{sign}{offset_minutes // 60}"
         label = "ежедневной" if mode == "daily_time" else "еженедельной"
 
-        msg = (f"⏰ *Установка времени {label} статистики*
-
-"
-               f"Часовой пояс: *{tz_label}*
-
-"
-               f"Шаг 2: введите время в формате `ЧЧ:ММ`
-"
-               f"Например: `09:00`")
+        msg = f"⏰ *Установка времени {label} статистики*\n\nЧасовой пояс: *{tz_label}*\n\nШаг 2: введите время в формате `ЧЧ:ММ`\nНапример: `09:00`"
         try:
             bot.edit_message_text(text=msg, chat_id=call.message.chat.id,
                                   message_id=call.message.message_id, parse_mode='Markdown')
